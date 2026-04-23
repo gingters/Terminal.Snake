@@ -2,8 +2,6 @@
 
 A polished terminal-UI puzzle in .NET 10. A tangled tangle of colorful snakes sits in a square grid; each snake has a single, head-determined exit on the border. Slide them out one by one without deadlocking.
 
-> Status: Work in progress — see the [plan](#roadmap) for phase-by-phase scope.
-
 ## Controls
 
 | Input                | Action                                                   |
@@ -47,14 +45,27 @@ pwsh ./scripts/quality-gate.ps1      # Windows
 
 The quality gate runs tests with coverage, produces an HTML report under `artifacts/report/`, and fails the build when any of:
 
-- cyclomatic complexity > 10
-- CRAP score > 15
-- a source file has 0 % line coverage
-- line coverage < 85 % or branch coverage < 75 %
+- cyclomatic complexity > 10 (per method)
+- CRAP score > 15 (per method, computed as complexity²·(1−cov)² + complexity)
+- a source class has 0 % line coverage
+- overall line coverage < 85 % or branch coverage < 75 %
 
-## Roadmap
+Per-method complexity comes straight from the Cobertura XML that coverlet emits; the gate walks every `coverage.cobertura.xml` under `artifacts/coverage/` and reports every failing method.
 
-Implementation is phased in small conventional-commit steps; see `/Users/sebastian/.claude/plans/in-net-nach-aktuellsten-radiant-cerf.md` for the full plan (German).
+## Architecture at a glance
+
+```
+Domain        pure value types (Cell, Direction, Snake, Board)
+Movement      MoveEngine: advance a snake as far as possible
+Generation    BoardGenerator (seeded) + Solver (BFS) + FixedLevels (10 curated seeds)
+Rendering     ViewportCalculator, FrameBuffer, BoardRenderer, BoardView (Spectre),
+              AnimationScheduler, Theme
+Input         InputDecoder (SGR-1006 mouse + CSI arrow/Tab), BufferedInputParser,
+              TerminalMode
+Game          GameEngine (player + demo), LevelManager, IdleWatcher
+```
+
+The top layer (`Program.cs`) wires Console + Spectre Live + an stdin pump; it is excluded from coverage because its only job is I/O plumbing around the tested `GameEngine`.
 
 ## License
 
