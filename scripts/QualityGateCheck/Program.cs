@@ -1,49 +1,58 @@
 using System.Diagnostics.CodeAnalysis;
-using System.Text.Json;
+using System.Globalization;
+using System.Xml.Linq;
 
 namespace TerminalSnake.QualityGate;
 
-// Developer-facing CLI that parses ReportGenerator's Summary.json and fails the
+// Developer-facing CLI that parses Cobertura coverage XML and fails the
 // build when coverage, file reach, or risk-hotspot thresholds are violated.
 // Excluded from coverage because it is a build-time script, not product code.
 [ExcludeFromCodeCoverage]
 internal static class Program
 {
-    private const double MinLineCoverage = 85.0;
-    private const double MinBranchCoverage = 75.0;
-    private const double MaxComplexity = 10.0;
+    private const double MinLineCoverage = 0.85;
+    private const double MinBranchCoverage = 0.75;
+    private const int MaxCyclomaticComplexity = 10;
     private const double MaxCrapScore = 15.0;
 
     private static int Main(string[] args)
     {
         if (args.Length != 1)
         {
-            Console.Error.WriteLine("usage: QualityGateCheck <path-to-Summary.json>");
+            Console.Error.WriteLine("usage: QualityGateCheck <coverage-directory>");
             return 2;
         }
-
-        if (!File.Exists(args[0]))
+        var directory = args[0];
+        if (!Directory.Exists(directory))
         {
-            Console.Error.WriteLine($"Summary file not found: {args[0]}");
+            Console.Error.WriteLine($"Coverage directory not found: {directory}");
             return 2;
         }
 
-        using var stream = File.OpenRead(args[0]);
-        using var document = JsonDocument.Parse(stream);
-        var root = document.RootElement;
+        var coverageFiles = Directory.GetFiles(directory, "coverage.cobertura.xml", SearchOption.AllDirectories);
+        if (coverageFiles.Length == 0)
+        {
+            Console.Error.WriteLine($"No coverage.cobertura.xml files under {directory}");
+            return 2;
+        }
 
         var failures = new List<string>();
-        CheckOverallCoverage(root, failures);
-        CheckEveryFileCovered(root, failures);
-        CheckRiskHotspots(root, failures);
+        foreach (var file in coverageFiles)
+        {
+            InspectFile(file, failures);
+        }
 
+        return ReportResult(failures);
+    }
+
+    private static int ReportResult(List<string> failures)
+    {
         if (failures.Count == 0)
         {
             Console.WriteLine("Quality gate: PASSED");
             return 0;
         }
-
-        Console.Error.WriteLine("Quality gate: FAILED");
+        Console.Error.WriteLine($"Quality gate: FAILED ({failures.Count} issues)");
         foreach (var failure in failures)
         {
             Console.Error.WriteLine($"  - {failure}");
@@ -51,104 +60,77 @@ internal static class Program
         return 1;
     }
 
-    private static void CheckOverallCoverage(JsonElement root, List<string> failures)
+    private static void InspectFile(string path, List<string> failures)
     {
-        if (!root.TryGetProperty("summary", out var summary))
+        var document = XDocument.Load(path);
+        var root = document.Root ?? throw new InvalidOperationException($"Empty coverage file: {path}");
+        CheckOverallCoverage(root, failures);
+        foreach (var cls in root.Descendants("class"))
         {
-            failures.Add("summary section missing from coverage report");
-            return;
-        }
-
-        var line = ReadDouble(summary, "linecoverage");
-        var branch = ReadDouble(summary, "branchcoverage");
-
-        if (line < MinLineCoverage)
-        {
-            failures.Add($"line coverage {line:F2}% < required {MinLineCoverage:F2}%");
-        }
-        if (branch < MinBranchCoverage)
-        {
-            failures.Add($"branch coverage {branch:F2}% < required {MinBranchCoverage:F2}%");
-        }
-    }
-
-    private static void CheckEveryFileCovered(JsonElement root, List<string> failures)
-    {
-        foreach (var cls in EnumerateClasses(root))
-        {
-            var className = cls.GetProperty("name").GetString() ?? "<unknown>";
-            var coverage = ReadDouble(cls, "coverage");
-            if (coverage <= 0.0)
+            CheckClassCoverage(cls, failures);
+            foreach (var method in cls.Element("methods")?.Elements("method") ?? Enumerable.Empty<XElement>())
             {
-                failures.Add($"class {className} has 0% line coverage");
+                CheckMethodComplexity(cls, method, failures);
             }
         }
     }
 
-    private static void CheckRiskHotspots(JsonElement root, List<string> failures)
+    private static void CheckOverallCoverage(XElement root, List<string> failures)
     {
-        if (!root.TryGetProperty("riskHotspots", out var hotspots) ||
-            hotspots.ValueKind != JsonValueKind.Array)
+        var lineRate = ReadDouble(root, "line-rate");
+        var branchRate = ReadDouble(root, "branch-rate");
+        if (lineRate < MinLineCoverage)
         {
-            return;
+            failures.Add($"overall line coverage {lineRate * 100:F2}% < required {MinLineCoverage * 100:F2}%");
         }
-
-        foreach (var hotspot in hotspots.EnumerateArray())
+        if (branchRate < MinBranchCoverage)
         {
-            var location = $"{hotspot.GetProperty("assembly").GetString()}::{hotspot.GetProperty("class").GetString()}::{hotspot.GetProperty("methodName").GetString()}";
-            foreach (var metric in hotspot.GetProperty("statusMetrics").EnumerateArray())
-            {
-                var name = metric.GetProperty("name").GetString() ?? string.Empty;
-                var value = ReadDouble(metric, "value");
-                ReportHotspotMetric(failures, location, name, value);
-            }
+            failures.Add($"overall branch coverage {branchRate * 100:F2}% < required {MinBranchCoverage * 100:F2}%");
         }
     }
 
-    private static void ReportHotspotMetric(List<string> failures, string location, string name, double value)
+    private static void CheckClassCoverage(XElement cls, List<string> failures)
     {
-        if (name.Equals("Cyclomatic complexity", StringComparison.OrdinalIgnoreCase) && value > MaxComplexity)
+        var name = cls.Attribute("name")?.Value ?? "<unknown>";
+        var lineRate = ReadDouble(cls, "line-rate");
+        if (lineRate <= 0.0)
         {
-            failures.Add($"{location} cyclomatic complexity {value} > {MaxComplexity}");
-        }
-        else if (name.Equals("CrapScore", StringComparison.OrdinalIgnoreCase) && value > MaxCrapScore)
-        {
-            failures.Add($"{location} CRAP score {value} > {MaxCrapScore}");
+            failures.Add($"class {name} has 0% line coverage");
         }
     }
 
-    private static IEnumerable<JsonElement> EnumerateClasses(JsonElement root)
+    private static void CheckMethodComplexity(XElement cls, XElement method, List<string> failures)
     {
-        if (!root.TryGetProperty("coverage", out var coverage) ||
-            !coverage.TryGetProperty("assemblies", out var assemblies))
+        var className = cls.Attribute("name")?.Value ?? "<unknown>";
+        var methodName = method.Attribute("name")?.Value ?? "<unknown>";
+        var complexity = (int)ReadDouble(method, "complexity");
+        var lineRate = ReadDouble(method, "line-rate");
+        if (complexity > MaxCyclomaticComplexity)
         {
-            yield break;
+            failures.Add($"{className}::{methodName} cyclomatic complexity {complexity} > {MaxCyclomaticComplexity}");
         }
-
-        foreach (var assembly in assemblies.EnumerateArray())
+        var crap = ComputeCrapScore(complexity, lineRate);
+        if (crap > MaxCrapScore)
         {
-            if (!assembly.TryGetProperty("classes", out var classes))
-            {
-                continue;
-            }
-            foreach (var cls in classes.EnumerateArray())
-            {
-                yield return cls;
-            }
+            failures.Add($"{className}::{methodName} CRAP score {crap:F1} > {MaxCrapScore:F1} (complexity={complexity}, coverage={lineRate * 100:F0}%)");
         }
     }
 
-    private static double ReadDouble(JsonElement element, string property)
+    private static double ComputeCrapScore(int complexity, double lineRate)
     {
-        if (!element.TryGetProperty(property, out var value))
+        var uncovered = 1.0 - lineRate;
+        return (complexity * complexity) * (uncovered * uncovered) + complexity;
+    }
+
+    private static double ReadDouble(XElement element, string attributeName)
+    {
+        var value = element.Attribute(attributeName)?.Value;
+        if (string.IsNullOrEmpty(value))
         {
             return 0.0;
         }
-        return value.ValueKind switch
-        {
-            JsonValueKind.Number => value.GetDouble(),
-            JsonValueKind.String => double.TryParse(value.GetString(), out var parsed) ? parsed : 0.0,
-            _ => 0.0,
-        };
+        return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : 0.0;
     }
 }
