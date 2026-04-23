@@ -25,15 +25,9 @@ public static class InputDecoder
 
     private static int DecodeEscapeSequence(ReadOnlySpan<byte> buffer, bool inputFlushed, out InputEvent? decoded)
     {
-        decoded = null;
         if (buffer.Length == 1)
         {
-            if (!inputFlushed)
-            {
-                return 0;
-            }
-            decoded = new KeyEvent(ConsoleKey.Escape);
-            return 1;
+            return TryEmitBareEscape(inputFlushed, out decoded);
         }
         if (buffer[1] != Csi)
         {
@@ -42,26 +36,70 @@ public static class InputDecoder
         }
         if (buffer.Length == 2)
         {
+            decoded = null;
             return 0;
         }
+        return DecodeCsiSequence(buffer, out decoded);
+    }
+
+    private static int TryEmitBareEscape(bool inputFlushed, out InputEvent? decoded)
+    {
+        if (inputFlushed)
+        {
+            decoded = new KeyEvent(ConsoleKey.Escape);
+            return 1;
+        }
+        decoded = null;
+        return 0;
+    }
+
+    private static int DecodeCsiSequence(ReadOnlySpan<byte> buffer, out InputEvent? decoded)
+    {
         if (buffer[2] == Sgr)
         {
             return DecodeSgrMouse(buffer, out decoded);
         }
         decoded = DecodeCsiFinal(buffer[2]);
-        return decoded is null ? 3 : 3;
+        return 3;
     }
 
-    private static InputEvent? DecodePlainByte(byte value) => value switch
+    private static InputEvent? DecodePlainByte(byte value) =>
+        DecodeControlByte(value) ?? DecodeAsciiByte(value);
+
+    private static InputEvent? DecodeControlByte(byte value) => value switch
     {
         (byte)'\t' => new KeyEvent(ConsoleKey.Tab),
-        (byte)'\r' or (byte)'\n' => new KeyEvent(ConsoleKey.Enter),
+        (byte)'\r' => new KeyEvent(ConsoleKey.Enter),
+        (byte)'\n' => new KeyEvent(ConsoleKey.Enter),
         (byte)' ' => new KeyEvent(ConsoleKey.Spacebar),
-        _ when value is >= (byte)'a' and <= (byte)'z' => new KeyEvent((ConsoleKey)(value - 0x20)),
-        _ when value is >= (byte)'A' and <= (byte)'Z' => new KeyEvent((ConsoleKey)value, Shift: true),
-        _ when value is >= (byte)'0' and <= (byte)'9' => new KeyEvent((ConsoleKey)value),
         _ => null,
     };
+
+    private static InputEvent? DecodeAsciiByte(byte value)
+    {
+        if (IsLowerAsciiLetter(value))
+        {
+            return new KeyEvent((ConsoleKey)(value - 0x20));
+        }
+        if (IsUpperAsciiLetter(value))
+        {
+            return new KeyEvent((ConsoleKey)value, Shift: true);
+        }
+        if (IsAsciiDigit(value))
+        {
+            return new KeyEvent((ConsoleKey)value);
+        }
+        return null;
+    }
+
+    private static bool IsLowerAsciiLetter(byte value) =>
+        value >= (byte)'a' && value <= (byte)'z';
+
+    private static bool IsUpperAsciiLetter(byte value) =>
+        value >= (byte)'A' && value <= (byte)'Z';
+
+    private static bool IsAsciiDigit(byte value) =>
+        value >= (byte)'0' && value <= (byte)'9';
 
     private static InputEvent? DecodeCsiFinal(byte value) => value switch
     {

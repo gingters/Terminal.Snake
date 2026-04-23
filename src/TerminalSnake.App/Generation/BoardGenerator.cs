@@ -8,8 +8,8 @@ public sealed class BoardGenerator
     public const int MinBoardSize = 6;
     public const int MaxBoardSize = 16;
     public const int MaxSegmentLength = 8;
+    public const int DefaultSolvableAttempts = 80;
 
-    private const int SolvableAttempts = 80;
     private const int SnakePlacementAttempts = 60;
     private const int MinSnakeLength = 3;
 
@@ -21,6 +21,23 @@ public sealed class BoardGenerator
         Direction.Right,
     };
 
+    private readonly int _solvableAttempts;
+
+    public BoardGenerator()
+        : this(DefaultSolvableAttempts)
+    {
+    }
+
+    public BoardGenerator(int solvableAttempts)
+    {
+        if (solvableAttempts < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(solvableAttempts), solvableAttempts, "Solvable attempts must be non-negative");
+        }
+        _solvableAttempts = solvableAttempts;
+    }
+
     public Board Generate(int levelIndex, int seed)
     {
         if (levelIndex < 1)
@@ -29,7 +46,7 @@ public sealed class BoardGenerator
         }
 
         var profile = DifficultyProfile.For(levelIndex);
-        for (var attempt = 0; attempt < SolvableAttempts; attempt++)
+        for (var attempt = 0; attempt < _solvableAttempts; attempt++)
         {
             var random = new Random(CombineSeed(seed, attempt));
             var board = TryBuildBoard(random, profile);
@@ -124,25 +141,37 @@ public sealed class BoardGenerator
     private static Cell? PickNextSegment(
         Random random, int size, HashSet<Cell> occupied, HashSet<Cell> local, Cell tail, Cell prev)
     {
-        var candidates = new List<Cell>(4);
+        var candidates = CollectGrowthCandidates(size, occupied, local, tail, prev);
+        return candidates.Count == 0 ? null : candidates[random.Next(candidates.Count)];
+    }
+
+    private static List<Cell> CollectGrowthCandidates(
+        int size, HashSet<Cell> occupied, HashSet<Cell> local, Cell tail, Cell prev)
+    {
+        var candidates = new List<Cell>(AllDirections.Length);
         foreach (var direction in AllDirections)
         {
             var candidate = tail + direction.Delta();
-            if (candidate == prev)
+            if (IsValidGrowthStep(candidate, prev, size, occupied, local))
             {
-                continue;
+                candidates.Add(candidate);
             }
-            if (!InBounds(candidate, size))
-            {
-                continue;
-            }
-            if (occupied.Contains(candidate) || local.Contains(candidate))
-            {
-                continue;
-            }
-            candidates.Add(candidate);
         }
-        return candidates.Count == 0 ? null : candidates[random.Next(candidates.Count)];
+        return candidates;
+    }
+
+    private static bool IsValidGrowthStep(
+        Cell candidate, Cell prev, int size, HashSet<Cell> occupied, HashSet<Cell> local)
+    {
+        if (candidate == prev)
+        {
+            return false;
+        }
+        if (!InBounds(candidate, size))
+        {
+            return false;
+        }
+        return !occupied.Contains(candidate) && !local.Contains(candidate);
     }
 
     private static bool InBounds(Cell cell, int size) =>
@@ -155,13 +184,12 @@ public sealed class BoardGenerator
         var colors = Enum.GetValues<SnakeColor>();
         for (var i = 0; i < profile.SnakeCount && i < colors.Length; i++)
         {
-            var row = i;
-            if (row >= profile.Size)
+            if (i >= profile.Size)
             {
                 break;
             }
-            var head = new Cell(1, row);
-            var second = new Cell(0, row);
+            var head = new Cell(1, i);
+            var second = new Cell(0, i);
             snakes.Add(new Snake(new[] { head, second }, colors[i]));
         }
         return new Board(profile.Size, snakes);
