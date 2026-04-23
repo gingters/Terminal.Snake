@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>TerminalSnake.QualityGate</RootNamespace>
+    <AssemblyName>TerminalSnake.QualityGate</AssemblyName>
+  </PropertyGroup>
+
+</Project>
