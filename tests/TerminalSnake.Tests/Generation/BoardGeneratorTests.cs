@@ -1,3 +1,4 @@
+using TerminalSnake.Domain;
 using TerminalSnake.Generation;
 
 namespace TerminalSnake.Tests.Generation;
@@ -53,4 +54,24 @@ public sealed class BoardGeneratorTests
         var colors = board.Snakes.Select(s => s.Color).ToArray();
         Assert.Equal(colors.Length, colors.Distinct().Count());
     }
+
+    [Fact]
+    public void Rejects_negative_solvable_attempts()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new BoardGenerator(-1));
+    }
+
+    [Fact]
+    public void Falls_back_to_deterministic_board_when_solvable_attempts_is_zero()
+    {
+        var generator = new BoardGenerator(solvableAttempts: 0);
+        var board = generator.Generate(3, seed: 1);
+        Assert.True(board.Snakes.Length >= 1);
+        foreach (var snake in board.Snakes)
+        {
+            Assert.Equal(2, snake.Segments.Length);
+            Assert.Equal(Direction.Right, snake.Direction);
+        }
+    }
+
 }

@@ -90,18 +90,38 @@ public sealed class GameEngine
 
     public void Tick(TimeSpan now)
     {
+        TickAnimationCompletion(now);
+        TickLevelTransition();
+        TickDemoModeTransition(now);
+        TickDemoPlayback(now);
+    }
+
+    private void TickAnimationCompletion(TimeSpan now)
+    {
         if (_animation.IsBusy && _animation.IsComplete(now))
         {
             FinalizeAnimation();
         }
+    }
+
+    private void TickLevelTransition()
+    {
         if (!_animation.IsBusy && _currentBoard.Snakes.Length == 0)
         {
             AdvanceToNextLevel();
         }
+    }
+
+    private void TickDemoModeTransition(TimeSpan now)
+    {
         if (Mode == GameMode.Player && _idle.HasIdledOut(now))
         {
             EnterDemoMode();
         }
+    }
+
+    private void TickDemoPlayback(TimeSpan now)
+    {
         if (Mode == GameMode.Demo && !_animation.IsBusy)
         {
             TryDequeueDemoMove(now);
@@ -118,23 +138,24 @@ public sealed class GameEngine
 
     private void DispatchKey(KeyEvent key, TimeSpan now)
     {
-        switch (key.Key)
+        if (key.Key == ConsoleKey.Tab)
         {
-            case ConsoleKey.Tab when key.Shift:
-                CycleSelection(-1);
-                break;
-            case ConsoleKey.Tab:
-                CycleSelection(+1);
-                break;
-            case ConsoleKey.Enter:
-            case ConsoleKey.Spacebar:
-                TriggerSelectedSnake(now);
-                break;
-            case ConsoleKey.R:
-                RestartLevel();
-                break;
+            CycleSelection(key.Shift ? -1 : +1);
+            return;
+        }
+        if (IsTriggerKey(key.Key))
+        {
+            TriggerSelectedSnake(now);
+            return;
+        }
+        if (key.Key == ConsoleKey.R)
+        {
+            RestartLevel();
         }
     }
+
+    private static bool IsTriggerKey(ConsoleKey key) =>
+        key == ConsoleKey.Enter || key == ConsoleKey.Spacebar;
 
     private static bool ContainsBoardPoint(Snake snake, int boardX, int boardY)
     {
