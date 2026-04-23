@@ -1,0 +1,43 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.swp
+.DS_Store
+
+# Rider
+_ReSharper.Caches/
+*.DotSettings.user
+
+# Tool cache
+.dotnet/
+
+# Test / coverage outputs
+TestResults/
+coverage.*.xml
+coverage.cobertura.xml
+*.trx
+*.coverage
+*.coveragexml
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+!packages.lock.json
+
+# Generated docs
+docs/_site/

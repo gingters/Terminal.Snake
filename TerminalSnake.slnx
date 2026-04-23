@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/scripts/">
+    <Project Path="scripts/QualityGateCheck/QualityGateCheck.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/TerminalSnake.App/TerminalSnake.App.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/TerminalSnake.Tests/TerminalSnake.Tests.csproj" />
+  </Folder>
+</Solution>

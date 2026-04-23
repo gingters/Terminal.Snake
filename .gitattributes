@@ -1,0 +1,28 @@
+# Normalize line endings
+* text=auto eol=lf
+
+# Windows-specific files keep CRLF
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Source files
+*.cs    text diff=csharp
+*.csproj text
+*.sln   text eol=crlf
+*.props text
+*.targets text
+*.json  text
+*.md    text
+*.yml   text
+*.yaml  text
+*.runsettings text
+*.editorconfig text
+
+# Binary
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.dll binary
+*.pdb binary
