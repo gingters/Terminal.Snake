@@ -29,13 +29,12 @@ echo "==> Generating coverage report"
 dotnet tool run reportgenerator -- \
     "-reports:$COVERAGE_DIR/**/coverage.cobertura.xml" \
     "-targetdir:$REPORT_DIR" \
-    "-reporttypes:Html;JsonSummary;TextSummary" \
-    "-riskHotspotsAnalysisThresholds:metricThresholdForCyclomaticComplexity=10;metricThresholdForCognitiveComplexity=15;metricThresholdForCrapScore=15"
+    "-reporttypes:Html;JsonSummary;TextSummary"
 
 echo "==> Enforcing quality gate"
 dotnet run --project "$ROOT_DIR/scripts/QualityGateCheck/QualityGateCheck.csproj" \
     --configuration Release \
     --no-build \
-    -- "$REPORT_DIR/Summary.json"
+    -- "$COVERAGE_DIR"
 
 echo "==> Gate passed. HTML report: $REPORT_DIR/index.html"

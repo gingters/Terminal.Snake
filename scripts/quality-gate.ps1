@@ -33,14 +33,13 @@ try {
     dotnet tool run reportgenerator -- `
         "-reports:$coverage/**/coverage.cobertura.xml" `
         "-targetdir:$report" `
-        "-reporttypes:Html;JsonSummary;TextSummary" `
-        "-riskHotspotsAnalysisThresholds:metricThresholdForCyclomaticComplexity=10;metricThresholdForCognitiveComplexity=15;metricThresholdForCrapScore=15"
+        "-reporttypes:Html;JsonSummary;TextSummary"
 
     Write-Host "==> Enforcing quality gate"
     dotnet run --project (Join-Path $rootDir 'scripts/QualityGateCheck/QualityGateCheck.csproj') `
         --configuration Release `
         --no-build `
-        -- (Join-Path $report 'Summary.json')
+        -- $coverage
 
     Write-Host "==> Gate passed. HTML report: $report/index.html"
 }
