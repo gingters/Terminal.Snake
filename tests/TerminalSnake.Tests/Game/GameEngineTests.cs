@@ -236,6 +236,41 @@ public sealed class GameEngineTests
         _ = engine.Render(viewport, TimeSpan.FromSeconds(1));
     }
 
+    [Fact]
+    public void Selection_clears_after_a_snake_exits_so_enter_cannot_chain_removals()
+    {
+        // Issue #14: the engine used to leave SelectedSnakeIndex pointing at
+        // whichever snake slid into the exited snake's slot, so repeatedly
+        // hitting Enter emptied the board without the player having to
+        // think. Drive the solver until the first exit and assert the
+        // selection is cleared.
+        var engine = CreateEngine(animationStep: TimeSpan.FromMilliseconds(1));
+        var clock = TimeSpan.Zero;
+
+        while (engine.Board.Snakes.Length > 0)
+        {
+            var solution = Solver.TrySolve(engine.Board);
+            Assert.NotNull(solution);
+            Assert.NotEmpty(solution);
+
+            var before = engine.Board.Snakes.Length;
+            var snake = engine.Board.Snakes[solution[0]];
+            engine.HandleBoardClick(snake.Head.X, snake.Head.Y, clock);
+            while (engine.IsAnimating)
+            {
+                clock = clock.Add(TimeSpan.FromMilliseconds(2));
+                engine.Tick(clock);
+            }
+
+            if (engine.Board.Snakes.Length < before)
+            {
+                Assert.Null(engine.SelectedSnakeIndex);
+                return;
+            }
+        }
+        Assert.Fail("expected at least one snake to exit during the level");
+    }
+
     private static void DrainCurrentLevel(GameEngine engine)
     {
         // Stop as soon as Tick advances to the next level. Without this guard

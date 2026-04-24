@@ -99,4 +99,41 @@ public sealed class BoardGeneratorTests
             .Any(b => b.Snakes.Any(s => s.Segments.Length >= 10));
         Assert.True(found, "level 12 should be able to produce a 10+ cell snake");
     }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(5)]
+    [InlineData(10)]
+    public void Level_two_and_above_always_start_with_at_least_one_blocked_snake(int levelIndex)
+    {
+        // Issue #14: boards where every snake can walk straight out trivialise
+        // the puzzle. The generator should reject them from level 2 onwards.
+        var generator = new BoardGenerator();
+        for (var seed = 0; seed < 10; seed++)
+        {
+            var board = generator.Generate(levelIndex, seed);
+            Assert.True(
+                HasAnyInitiallyBlockedSnake(board),
+                $"level {levelIndex} seed {seed} has no initially blocked snake");
+        }
+    }
+
+    private static bool HasAnyInitiallyBlockedSnake(Board board)
+    {
+        foreach (var snake in board.Snakes)
+        {
+            var delta = snake.Direction.Delta();
+            var cursor = snake.Head + delta;
+            while (board.IsInside(cursor))
+            {
+                var occupant = board.OccupyingSnake(cursor);
+                if (occupant is int index && !ReferenceEquals(board.Snakes[index], snake))
+                {
+                    return true;
+                }
+                cursor += delta;
+            }
+        }
+        return false;
+    }
 }
