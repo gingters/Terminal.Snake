@@ -65,8 +65,15 @@ internal static class Program
         var initialBuffer = engine.Render(viewport, stopwatch.Elapsed);
         var view = new BoardView(initialBuffer);
 
+        // AutoClear(false): Spectre diffs cell-by-cell between refreshes instead of
+        // wiping the region, so a one-off input (Tab, selection change, ...) does
+        // not repaint the whole frame top-to-bottom and the board stays still.
+        // Overflow(Crop): never scroll when the renderable matches the terminal
+        // height; scrolling would nudge the frame up/down visibly on each tick.
         AnsiConsole.Live(view)
-            .AutoClear(true)
+            .AutoClear(false)
+            .Overflow(VerticalOverflow.Crop)
+            .Cropping(VerticalOverflowCropping.Bottom)
             .Start(ctx =>
             {
                 while (!cts.IsCancellationRequested)
