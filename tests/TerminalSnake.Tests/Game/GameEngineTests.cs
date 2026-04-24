@@ -208,16 +208,17 @@ public sealed class GameEngineTests
     [Fact]
     public void BuildViewport_tracks_new_board_size_after_a_level_up()
     {
-        // Level 2 generates a 6x6 board, level 3 jumps to 7x7. Drain level 2
-        // and confirm BuildViewport reports the new, larger board — the crash
-        // in issue #7 happened because a cached viewport still claimed 6.
-        var engine = CreateEngine(startLevel: 2, animationStep: TimeSpan.FromMilliseconds(1));
+        // Level 1 is 6x6, level 2 is 7x7 under the current difficulty
+        // profile. Drain level 1 and confirm BuildViewport reports the new,
+        // larger board — the crash in issue #7 happened because a cached
+        // viewport still claimed 6.
+        var engine = CreateEngine(startLevel: 1, animationStep: TimeSpan.FromMilliseconds(1));
         var beforeSize = engine.Board.Size;
         Assert.Equal(beforeSize, engine.BuildViewport(200, 80).BoardSide);
 
         DrainCurrentLevel(engine);
 
-        Assert.Equal(3, engine.LevelIndex);
+        Assert.Equal(2, engine.LevelIndex);
         var afterSize = engine.Board.Size;
         Assert.NotEqual(beforeSize, afterSize);
         Assert.Equal(afterSize, engine.BuildViewport(200, 80).BoardSide);
@@ -229,7 +230,7 @@ public sealed class GameEngineTests
         // Regression for issue #7: BoardRenderer rejects mismatched viewport
         // and board sizes. The fix is to rebuild the viewport every render
         // via BuildViewport so it always tracks the engine's current board.
-        var engine = CreateEngine(startLevel: 2, animationStep: TimeSpan.FromMilliseconds(1));
+        var engine = CreateEngine(startLevel: 1, animationStep: TimeSpan.FromMilliseconds(1));
         DrainCurrentLevel(engine);
         var viewport = engine.BuildViewport(200, 80);
         _ = engine.Render(viewport, TimeSpan.FromSeconds(1));

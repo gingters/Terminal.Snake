@@ -7,11 +7,13 @@ public sealed class BoardGenerator
     public const int MaxSnakesPerBoard = 8;
     public const int MinBoardSize = 6;
     public const int MaxBoardSize = 16;
-    public const int MaxSegmentLength = 8;
+    public const int MaxSegmentLength = 14;
     public const int DefaultSolvableAttempts = 80;
 
-    private const int SnakePlacementAttempts = 60;
-    private const int MinSnakeLength = 3;
+    // Long-snake profiles make random-walk placement harder; allow more
+    // placement retries before failing a whole board attempt.
+    private const int SnakePlacementAttempts = 120;
+    private const int AbsoluteMinSnakeLength = 3;
 
     private static readonly Direction[] AllDirections =
     {
@@ -93,9 +95,12 @@ public sealed class BoardGenerator
                 continue;
             }
             var (head, second) = seed.Value;
-            var targetLength = random.Next(MinSnakeLength, profile.MaxSnakeLength + 1);
+            var targetLength = random.Next(profile.MinSnakeLength, profile.MaxSnakeLength + 1);
             var segments = GrowSnake(random, profile.Size, occupied, head, second, targetLength);
-            if (segments.Count >= MinSnakeLength)
+            // Reject snakes that couldn't reach the profile's minimum length —
+            // accepting a 3-segment snake when the target was 10 would quietly
+            // regress the "snakes must be longer" ask behind issue #13.
+            if (segments.Count >= profile.MinSnakeLength)
             {
                 return new Snake(segments, color);
             }
@@ -195,14 +200,19 @@ public sealed class BoardGenerator
         return new Board(profile.Size, snakes);
     }
 
-    internal sealed record DifficultyProfile(int Size, int SnakeCount, int MaxSnakeLength)
+    internal sealed record DifficultyProfile(int Size, int SnakeCount, int MinSnakeLength, int MaxSnakeLength)
     {
+        // Level 1 stays friendly (3-4 cell snakes on a 6x6). Snakes grow quickly
+        // from there so by ~level 7 the maximum passes 10 cells; boards widen
+        // in step so the density stays manageable for the solver.
         public static DifficultyProfile For(int levelIndex)
         {
-            var size = Math.Clamp(MinBoardSize + levelIndex / 3, MinBoardSize, MaxBoardSize);
-            var snakeCount = Math.Clamp(3 + levelIndex / 2, 3, MaxSnakesPerBoard);
-            var maxLen = Math.Clamp(3 + levelIndex / 4, MinSnakeLength, MaxSegmentLength);
-            return new DifficultyProfile(size, snakeCount, maxLen);
+            var size = Math.Clamp(MinBoardSize + levelIndex / 2, MinBoardSize, MaxBoardSize);
+            var snakeCount = Math.Clamp(3 + levelIndex / 3, 3, MaxSnakesPerBoard);
+            var minLen = Math.Clamp(AbsoluteMinSnakeLength + levelIndex / 4, AbsoluteMinSnakeLength, MaxSegmentLength);
+            var rawMax = AbsoluteMinSnakeLength + levelIndex;
+            var maxLen = Math.Clamp(Math.Max(rawMax, minLen + 1), AbsoluteMinSnakeLength + 1, MaxSegmentLength);
+            return new DifficultyProfile(size, snakeCount, minLen, maxLen);
         }
     }
 }
