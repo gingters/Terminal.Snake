@@ -31,6 +31,52 @@ public sealed class GameEngineTests
         Assert.Equal(GameMode.Player, engine.Mode);
         Assert.Null(engine.SelectedSnakeIndex);
         Assert.False(engine.IsAnimating);
+        Assert.True(engine.HelpVisible);
+    }
+
+    [Fact]
+    public void H_toggles_help_visibility()
+    {
+        var engine = CreateEngine();
+        Assert.True(engine.HelpVisible);
+        engine.HandleKey(new KeyEvent(ConsoleKey.H), TimeSpan.Zero);
+        Assert.False(engine.HelpVisible);
+        engine.HandleKey(new KeyEvent(ConsoleKey.H), TimeSpan.FromMilliseconds(1));
+        Assert.True(engine.HelpVisible);
+    }
+
+    [Theory]
+    [InlineData(ConsoleKey.Tab)]
+    [InlineData(ConsoleKey.Enter)]
+    [InlineData(ConsoleKey.Spacebar)]
+    [InlineData(ConsoleKey.R)]
+    public void Any_gameplay_key_hides_the_help_overlay(ConsoleKey key)
+    {
+        var engine = CreateEngine();
+        Assert.True(engine.HelpVisible);
+        engine.HandleKey(new KeyEvent(key), TimeSpan.Zero);
+        Assert.False(engine.HelpVisible);
+    }
+
+    [Fact]
+    public void Board_click_hides_the_help_overlay()
+    {
+        var engine = CreateEngine();
+        var head = engine.Board.Snakes[0].Head;
+        engine.HandleBoardClick(head.X, head.Y, TimeSpan.Zero);
+        Assert.False(engine.HelpVisible);
+    }
+
+    [Fact]
+    public void Demo_mode_makes_the_help_overlay_visible_again()
+    {
+        var engine = CreateEngine(idleThreshold: TimeSpan.FromMilliseconds(100));
+        engine.HandleKey(new KeyEvent(ConsoleKey.Tab), TimeSpan.Zero);
+        Assert.False(engine.HelpVisible);
+
+        engine.Tick(TimeSpan.FromMilliseconds(500));
+        Assert.Equal(GameMode.Demo, engine.Mode);
+        Assert.True(engine.HelpVisible);
     }
 
     [Fact]
