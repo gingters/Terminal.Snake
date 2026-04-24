@@ -169,6 +169,32 @@ public sealed class GameEngineTests
     }
 
     [Fact]
+    public void Auto_play_carries_over_into_the_next_level_without_another_idle_wait()
+    {
+        // Issue #16 follow-up: once auto-play is running, finishing the level
+        // must not drop back to Player mode and wait another 30 s of idle.
+        // Drive the idle-triggered demo through a whole level and assert the
+        // engine stays in Demo mode on the next level.
+        var engine = CreateEngine(
+            idleThreshold: TimeSpan.FromMilliseconds(10),
+            animationStep: TimeSpan.FromMilliseconds(1),
+            demoMovePause: TimeSpan.Zero,
+            demoArmDelay: TimeSpan.FromMilliseconds(10));
+        var clock = TimeSpan.Zero;
+
+        var startLevel = engine.LevelIndex;
+        var steps = 0;
+        while (engine.LevelIndex == startLevel && steps++ < 20_000)
+        {
+            clock = clock.Add(TimeSpan.FromMilliseconds(2));
+            engine.Tick(clock);
+        }
+
+        Assert.NotEqual(startLevel, engine.LevelIndex);
+        Assert.Equal(GameMode.Demo, engine.Mode);
+    }
+
+    [Fact]
     public void D_arm_window_is_cancelled_when_the_player_acts_again()
     {
         // Pressing D and then Tab before the arm delay elapses must abort

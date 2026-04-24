@@ -351,8 +351,30 @@ public sealed class GameEngine
         LevelIndex += 1;
         _currentBoard = _levels.LoadLevel(LevelIndex);
         SelectedSnakeIndex = null;
-        Mode = GameMode.Player;
         _demoQueue.Clear();
+
+        if (Mode == GameMode.Demo)
+        {
+            // If auto-play finished the previous level, keep running on the
+            // next one without waiting for the idle threshold again — the
+            // user asked for auto-play and hasn't taken over. Reload the
+            // solver for the fresh board and reset the dequeue pacing.
+            ReloadDemoQueueForCurrentBoard();
+            _lastDemoMoveAt = TimeSpan.Zero;
+            HelpVisible = true;
+            return;
+        }
+
+        Mode = GameMode.Player;
+    }
+
+    private void ReloadDemoQueueForCurrentBoard()
+    {
+        var solution = Solver.TrySolve(_currentBoard);
+        if (solution is not null)
+        {
+            _demoQueue = new Queue<int>(solution);
+        }
     }
 
     private void EnterDemoMode()
@@ -361,10 +383,8 @@ public sealed class GameEngine
         SelectedSnakeIndex = null;
         HelpVisible = true;
         _demoArmedAt = null;
-        var solution = Solver.TrySolve(_currentBoard);
-        _demoQueue = solution is null
-            ? new Queue<int>()
-            : new Queue<int>(solution);
+        _demoQueue.Clear();
+        ReloadDemoQueueForCurrentBoard();
         _lastDemoMoveAt = TimeSpan.Zero;
     }
 
