@@ -136,6 +136,21 @@ public sealed class GameEngine
         return buffer;
     }
 
+    /// <summary>
+    /// Builds a viewport that always matches the engine's current board size.
+    /// Callers that hang on to a cached viewport across level transitions can
+    /// end up passing a viewport whose <c>BoardSide</c> no longer matches the
+    /// new board, which the renderer rejects — the crash reported in issue #7.
+    /// Callers should invoke this on every render instead of caching.
+    /// </summary>
+    public Viewport BuildViewport(int terminalWidth, int terminalHeight)
+    {
+        return ViewportCalculator.Compute(
+            Math.Max(terminalWidth, ViewportCalculator.MinimumWidth),
+            Math.Max(terminalHeight, ViewportCalculator.MinimumHeight),
+            _currentBoard.Size);
+    }
+
     private void DispatchKey(KeyEvent key, TimeSpan now)
     {
         if (key.Key == ConsoleKey.Tab)
