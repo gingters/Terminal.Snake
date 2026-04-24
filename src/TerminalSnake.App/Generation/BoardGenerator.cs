@@ -12,7 +12,7 @@ public sealed class BoardGenerator
     public const int MaxBoardSize = 16;
     public const int AbsoluteMaxBoardSize = 64;
     public const int MaxSegmentLength = 120;
-    public const int DefaultSolvableAttempts = 200;
+    public const int DefaultSolvableAttempts = 300;
 
     // Hard cap on how many snakes a board can carry. There are 8 distinct
     // colours in SnakeColor and we cycle past that for very large boards,
@@ -98,7 +98,7 @@ public sealed class BoardGenerator
             return null;
         }
         // Greedy-only solvability check — BFS is prohibitively expensive
-        // on the 40-wide boards level 100+ produces (6 GB / 4 s in the
+        // on the 40+ wide boards level 100+ produces (6 GB / 4 s in the
         // pre-change benchmark). Boards that only succeed via partial-
         // move trickery are rare; rejecting them in generation is fine
         // because the caller just retries with the next seed.
@@ -140,21 +140,38 @@ public sealed class BoardGenerator
         return false;
     }
 
-    private static int CombineSeed(int baseSeed, int attempt) =>
-        unchecked(baseSeed * 397 ^ attempt);
+    private static int CombineSeed(int baseSeed, int attempt)
+    {
+        // Splitmix-style deterministic mixer. The old `baseSeed * 397
+        // ^ attempt` occasionally produced correlated bad runs where
+        // 500 consecutive attempts all failed (#36 image review: level
+        // 512 on a 60-wide terminal kept falling back). Need a mixer
+        // that (a) is stable across .NET sessions — unlike HashCode.Combine
+        // — and (b) actually spreads bits across the output.
+        unchecked
+        {
+            var x = (uint)baseSeed * 2654435761U;
+            x ^= (uint)attempt * 40503U;
+            x ^= x >> 16;
+            x *= 2246822519U;
+            x ^= x >> 13;
+            x *= 3266489917U;
+            x ^= x >> 16;
+            return (int)x;
+        }
+    }
 
     private static Board? TryBuildBoard(Random random, DifficultyProfile profile)
     {
         var occupied = new HashSet<Cell>();
         var snakes = new List<Snake>(profile.SnakeCount);
-        // Every snake starts with its head biased toward its exit border
-        // — that's what lets the greedy solver always find an opening
-        // move at every stage, even on 60-wide puzzles. The random-walk
-        // body grows backward *into the middle* of the board, so snakes
-        // still cross each other's forward rays and the ordering puzzle
-        // isn't trivial. Any lower starter share regularly deadlocked
-        // the middle snakes and dropped back to the 2-segment fallback
-        // board (#36 image review).
+        // Every snake is a "starter" — head biased toward its exit
+        // border — but the starter zone is wider than the 4-cell strip
+        // the first pass used: heads now sit within ~a third of the
+        // inner side of the border, so the forward ray typically has
+        // to cross several other snakes' bodies before reaching the
+        // edge. That's the ordering challenge (#36 image review:
+        // "9 of 11 snakes at the edges facing outwards — trivial").
         var starters = profile.SnakeCount;
         for (var i = 0; i < profile.SnakeCount; i++)
         {
@@ -231,12 +248,14 @@ public sealed class BoardGenerator
 
     private static Cell PickHeadNearExitBorder(Random random, int size, Direction direction)
     {
-        // Starter snakes sit within StarterBand cells of their exit
-        // border so greedy always has at least one obvious opening move;
-        // the rest of the snakes use PickHeadAnywhere for the challenge.
-        const int StarterBand = 4;
+        // Starter snakes sit within the "exit-side quarter" of the
+        // inner region — far enough from the border that the forward
+        // ray typically crosses one or two other snakes' bodies (which
+        // is the ordering-puzzle challenge), but close enough that the
+        // pure-greedy solver reliably finds a release order before
+        // the generator exhausts its seed budget.
         var innerMax = size - 2;
-        var band = Math.Min(StarterBand, innerMax);
+        var band = Math.Max(3, innerMax / 4);
         var front = 1 + innerMax - band + random.Next(band);
         var back = 1 + random.Next(innerMax);
         return direction switch
@@ -368,7 +387,12 @@ public sealed class BoardGenerator
             // each (≈30 % coverage) without the random-walk placement
             // falling off a cliff (#36 image reviews).
             var levelDriven = 3 + levelIndex / 3;
-            var sizeFloor = (inner * 2) / 5;
+            // Cap growth once the board gets above ~50 cells — past
+            // that, random-walk placement struggles to fit enough long
+            // snakes to still leave the solver a way through. 20 snakes
+            // on a 60-wide board is already ~25 % density, which the
+            // partial-move solver can untangle reliably.
+            var sizeFloor = Math.Min(20, (inner * 2) / 5);
             var sizeCap = Math.Max(8, sizeFloor);
             return Math.Clamp(
                 Math.Max(levelDriven, sizeFloor),
