@@ -135,16 +135,37 @@ public sealed class SnakeSelectionTests
     }
 
     [Fact]
-    public void Snakes_outside_the_cone_are_rejected_even_if_closer()
+    public void Half_plane_fallback_picks_the_lone_off_axis_candidate()
     {
-        // Only candidate is (6, 10) which is mostly below — it's outside the
-        // right-direction cone so we return null rather than snapping to it.
+        // Only candidate is (6, 10) — off-axis for a right-press but still
+        // on the "right" side (dx > 0). The narrow cone rejects it, but the
+        // half-plane fallback kicks in so the player is not stuck without
+        // a selection target.
         var snakes = new[]
         {
             Snake(SnakeColor.Red, (5, 5), (4, 5)),
             Snake(SnakeColor.Cyan, (6, 10), (6, 11)),
         };
         var result = SnakeSelection.FindNearestInDirection(snakes, new Cell(5, 5), Direction.Right, 0);
-        Assert.Null(result);
+        Assert.Equal(1, result);
+    }
+
+    [Fact]
+    public void Corner_snake_still_reaches_off_axis_neighbours_via_fallback()
+    {
+        // Reproduces the second image-based report on issue #19: the red
+        // snake sits in a corner and the other two snakes are both far
+        // off-axis. Without the half-plane fallback neither up nor down
+        // would find anything, which makes arrow navigation feel broken.
+        var snakes = new[]
+        {
+            Snake(SnakeColor.Red,    (2, 8), (1, 8)),
+            Snake(SnakeColor.Yellow, (9, 2), (8, 2)),   // up-right of red
+            Snake(SnakeColor.Blue,   (10, 9), (11, 9)), // down-right of red
+        };
+        var up = SnakeSelection.FindNearestInDirection(snakes, new Cell(2, 8), Direction.Up, excludedIndex: 0);
+        Assert.Equal(1, up);
+        var down = SnakeSelection.FindNearestInDirection(snakes, new Cell(2, 8), Direction.Down, excludedIndex: 0);
+        Assert.Equal(2, down);
     }
 }
