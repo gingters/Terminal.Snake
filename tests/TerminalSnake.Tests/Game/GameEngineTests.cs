@@ -12,6 +12,7 @@ public sealed class GameEngineTests
         TimeSpan? idleThreshold = null,
         TimeSpan? animationStep = null,
         TimeSpan? demoMovePause = null,
+        TimeSpan? demoArmDelay = null,
         int startLevel = 1)
     {
         return new GameEngine(
@@ -20,6 +21,7 @@ public sealed class GameEngineTests
             animationScheduler: new AnimationScheduler(animationStep ?? TimeSpan.FromMilliseconds(10)),
             renderer: new BoardRenderer(),
             demoMovePause: demoMovePause ?? TimeSpan.FromMilliseconds(20),
+            demoArmDelay: demoArmDelay ?? TimeSpan.FromMilliseconds(50),
             startLevel: startLevel);
     }
 
@@ -71,8 +73,10 @@ public sealed class GameEngineTests
     public void Demo_mode_makes_the_help_overlay_visible_again()
     {
         // Tab hides help and (per #16) disables auto-play; press D to re-arm
-        // auto-play before letting the idle timer run out.
-        var engine = CreateEngine(idleThreshold: TimeSpan.FromMilliseconds(100));
+        // auto-play before letting the short arm delay elapse.
+        var engine = CreateEngine(
+            idleThreshold: TimeSpan.FromMilliseconds(100),
+            demoArmDelay: TimeSpan.FromMilliseconds(20));
         engine.HandleKey(new KeyEvent(ConsoleKey.Tab), TimeSpan.Zero);
         Assert.False(engine.HelpVisible);
         engine.HandleKey(new KeyEvent(ConsoleKey.D), TimeSpan.FromMilliseconds(10));
@@ -80,6 +84,106 @@ public sealed class GameEngineTests
         engine.Tick(TimeSpan.FromMilliseconds(500));
         Assert.Equal(GameMode.Demo, engine.Mode);
         Assert.True(engine.HelpVisible);
+    }
+
+    [Fact]
+    public void AutoPlay_defaults_to_enabled()
+    {
+        var engine = CreateEngine();
+        Assert.True(engine.AutoPlayEnabled);
+    }
+
+    [Theory]
+    [InlineData(ConsoleKey.Tab)]
+    [InlineData(ConsoleKey.Enter)]
+    [InlineData(ConsoleKey.Spacebar)]
+    [InlineData(ConsoleKey.R)]
+    public void First_gameplay_key_disables_autoplay(ConsoleKey key)
+    {
+        var engine = CreateEngine();
+        engine.HandleKey(new KeyEvent(key), TimeSpan.Zero);
+        Assert.False(engine.AutoPlayEnabled);
+    }
+
+    [Fact]
+    public void Board_click_disables_autoplay()
+    {
+        var engine = CreateEngine();
+        var head = engine.Board.Snakes[0].Head;
+        engine.HandleBoardClick(head.X, head.Y, TimeSpan.Zero);
+        Assert.False(engine.AutoPlayEnabled);
+    }
+
+    [Fact]
+    public void H_does_not_disable_autoplay()
+    {
+        var engine = CreateEngine();
+        engine.HandleKey(new KeyEvent(ConsoleKey.H), TimeSpan.Zero);
+        Assert.True(engine.AutoPlayEnabled);
+    }
+
+    [Fact]
+    public void D_re_enables_autoplay_after_it_was_turned_off()
+    {
+        var engine = CreateEngine();
+        engine.HandleKey(new KeyEvent(ConsoleKey.Tab), TimeSpan.Zero);
+        Assert.False(engine.AutoPlayEnabled);
+        engine.HandleKey(new KeyEvent(ConsoleKey.D), TimeSpan.FromMilliseconds(10));
+        Assert.True(engine.AutoPlayEnabled);
+    }
+
+    [Fact]
+    public void Idle_after_first_input_does_not_enter_demo_mode()
+    {
+        // Issue #16: grabbing a coffee on level 4 must not cause level 5 to
+        // start playing itself.
+        var engine = CreateEngine(idleThreshold: TimeSpan.FromMilliseconds(50));
+        engine.HandleKey(new KeyEvent(ConsoleKey.Tab), TimeSpan.Zero);
+        Assert.False(engine.AutoPlayEnabled);
+
+        for (var ms = 0; ms < 2_000; ms += 50)
+        {
+            engine.Tick(TimeSpan.FromMilliseconds(ms));
+        }
+        Assert.Equal(GameMode.Player, engine.Mode);
+    }
+
+    [Fact]
+    public void D_fires_demo_after_arm_delay_independent_of_idle_threshold()
+    {
+        // Issue #16 follow-up: after an explicit D the demo must kick in
+        // after the short arm delay (1 s in production), not after the 30 s
+        // idle timeout. Injecting a very long idle threshold proves the arm
+        // delay alone triggers the transition.
+        var engine = CreateEngine(
+            idleThreshold: TimeSpan.FromHours(1),
+            demoArmDelay: TimeSpan.FromMilliseconds(40));
+        engine.HandleKey(new KeyEvent(ConsoleKey.Tab), TimeSpan.Zero);
+        engine.HandleKey(new KeyEvent(ConsoleKey.D), TimeSpan.FromMilliseconds(10));
+
+        engine.Tick(TimeSpan.FromMilliseconds(30));
+        Assert.Equal(GameMode.Player, engine.Mode);
+
+        engine.Tick(TimeSpan.FromMilliseconds(60));
+        Assert.Equal(GameMode.Demo, engine.Mode);
+    }
+
+    [Fact]
+    public void D_arm_window_is_cancelled_when_the_player_acts_again()
+    {
+        // Pressing D and then Tab before the arm delay elapses must abort
+        // the pending demo transition — the player took over.
+        var engine = CreateEngine(
+            idleThreshold: TimeSpan.FromHours(1),
+            demoArmDelay: TimeSpan.FromMilliseconds(40));
+        engine.HandleKey(new KeyEvent(ConsoleKey.D), TimeSpan.Zero);
+        engine.HandleKey(new KeyEvent(ConsoleKey.Tab), TimeSpan.FromMilliseconds(10));
+
+        for (var ms = 20; ms < 500; ms += 20)
+        {
+            engine.Tick(TimeSpan.FromMilliseconds(ms));
+        }
+        Assert.Equal(GameMode.Player, engine.Mode);
     }
 
     [Fact]

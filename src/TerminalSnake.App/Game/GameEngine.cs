@@ -11,6 +11,9 @@ public sealed class GameEngine
     private static readonly TimeSpan DefaultAnimationStep = TimeSpan.FromMilliseconds(80);
     private static readonly TimeSpan DefaultIdleThreshold = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan DefaultDemoMovePause = TimeSpan.FromMilliseconds(250);
+    // Shorter than the cold-start idle threshold: if the user explicitly
+    // re-arms auto-play with D, the demo should kick off quickly (#16).
+    private static readonly TimeSpan DefaultDemoArmDelay = TimeSpan.FromSeconds(1);
 
     private readonly LevelManager _levels;
     private readonly AnimationScheduler _animation;
@@ -19,12 +22,14 @@ public sealed class GameEngine
     private readonly HudRenderer _hudRenderer;
     private readonly HudStrings _hudStrings;
     private readonly TimeSpan _demoMovePause;
+    private readonly TimeSpan _demoArmDelay;
 
     private Board _currentBoard;
     private Board? _pendingBoardAfterAnimation;
     private int _preAnimationSnakeCount;
     private Queue<int> _demoQueue = new();
     private TimeSpan _lastDemoMoveAt = TimeSpan.Zero;
+    private TimeSpan? _demoArmedAt;
 
     public GameEngine(
         LevelManager? levels = null,
@@ -34,6 +39,7 @@ public sealed class GameEngine
         HudRenderer? hudRenderer = null,
         HudStrings? hudStrings = null,
         TimeSpan? demoMovePause = null,
+        TimeSpan? demoArmDelay = null,
         int startLevel = 1)
     {
         _levels = Or(levels, DefaultLevels);
@@ -43,6 +49,7 @@ public sealed class GameEngine
         _hudRenderer = Or(hudRenderer, DefaultHudRenderer);
         _hudStrings = Or(hudStrings, DefaultHudStrings);
         _demoMovePause = demoMovePause ?? DefaultDemoMovePause;
+        _demoArmDelay = demoArmDelay ?? DefaultDemoArmDelay;
         LevelIndex = startLevel;
         _currentBoard = _levels.LoadLevel(startLevel);
     }
@@ -94,6 +101,7 @@ public sealed class GameEngine
         NoteInputActivity(now);
         HelpVisible = false;
         AutoPlayEnabled = false;
+        _demoArmedAt = null;
         if (_animation.IsBusy)
         {
             return;
@@ -144,10 +152,25 @@ public sealed class GameEngine
 
     private void TickDemoModeTransition(TimeSpan now)
     {
-        if (AutoPlayEnabled && Mode == GameMode.Player && _idle.HasIdledOut(now))
+        if (!AutoPlayEnabled || Mode != GameMode.Player)
+        {
+            return;
+        }
+        if (ShouldEnterDemo(now))
         {
             EnterDemoMode();
         }
+    }
+
+    private bool ShouldEnterDemo(TimeSpan now)
+    {
+        // An explicit D re-arm starts a short fuse that ignores the normal
+        // 30-second idle threshold — the player just asked for auto-play.
+        if (_demoArmedAt is { } armedAt && now - armedAt >= _demoArmDelay)
+        {
+            return true;
+        }
+        return _idle.HasIdledOut(now);
     }
 
     private void TickDemoPlayback(TimeSpan now)
@@ -184,16 +207,17 @@ public sealed class GameEngine
 
     private void DispatchKey(KeyEvent key, TimeSpan now)
     {
-        if (HandleMetaKey(key))
+        if (HandleMetaKey(key, now))
         {
             return;
         }
         HelpVisible = false;
         AutoPlayEnabled = false;
+        _demoArmedAt = null;
         DispatchGameplayKey(key, now);
     }
 
-    private bool HandleMetaKey(KeyEvent key)
+    private bool HandleMetaKey(KeyEvent key, TimeSpan now)
     {
         if (key.Key == ConsoleKey.H)
         {
@@ -203,6 +227,7 @@ public sealed class GameEngine
         if (key.Key == ConsoleKey.D)
         {
             AutoPlayEnabled = true;
+            _demoArmedAt = now;
             return true;
         }
         return false;
@@ -335,6 +360,7 @@ public sealed class GameEngine
         Mode = GameMode.Demo;
         SelectedSnakeIndex = null;
         HelpVisible = true;
+        _demoArmedAt = null;
         var solution = Solver.TrySolve(_currentBoard);
         _demoQueue = solution is null
             ? new Queue<int>()
