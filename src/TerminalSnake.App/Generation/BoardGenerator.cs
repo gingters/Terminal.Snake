@@ -4,11 +4,22 @@ namespace TerminalSnake.Generation;
 
 public sealed class BoardGenerator
 {
-    public const int MaxSnakesPerBoard = 8;
     public const int MinBoardSize = 6;
+    // Default cap used when no explicit terminal size is supplied — matches
+    // the old placement grid so tutorial-tight boards keep their existing
+    // density. Runtime callers pass a larger cap derived from the terminal
+    // (up to AbsoluteMaxBoardSize) so the play area scales with the screen.
     public const int MaxBoardSize = 16;
-    public const int MaxSegmentLength = 14;
-    public const int DefaultSolvableAttempts = 80;
+    public const int AbsoluteMaxBoardSize = 64;
+    public const int MaxSegmentLength = 120;
+    public const int DefaultSolvableAttempts = 300;
+
+    // Hard cap on how many snakes a board can carry. There are 8 distinct
+    // colours in SnakeColor and we cycle past that for very large boards,
+    // so snakes on big boards may repeat a colour — the player still reads
+    // them apart by their position on the grid.
+    public const int MaxSnakesPerBoard = 48;
+    private const int ColorCount = 8;
 
     // Long-snake profiles make random-walk placement harder; allow more
     // placement retries before failing a whole board attempt.
@@ -40,14 +51,15 @@ public sealed class BoardGenerator
         _solvableAttempts = solvableAttempts;
     }
 
-    public Board Generate(int levelIndex, int seed)
+    public Board Generate(int levelIndex, int seed, int maxBoardSide = MaxBoardSize)
     {
         if (levelIndex < 1)
         {
             throw new ArgumentOutOfRangeException(nameof(levelIndex), levelIndex, "Level index must be ≥ 1");
         }
 
-        var profile = DifficultyProfile.For(levelIndex);
+        var boardSize = DetermineBoardSize(levelIndex, maxBoardSide);
+        var profile = DifficultyProfile.For(levelIndex, boardSize);
         var requireChallenge = levelIndex >= 2;
         for (var attempt = 0; attempt < _solvableAttempts; attempt++)
         {
@@ -62,6 +74,33 @@ public sealed class BoardGenerator
         return FallbackBoard(profile);
     }
 
+    // Board size grows by 1 per level past level 1, clamped to what the
+    // terminal can render (issue #36). Snakes are placed directly on this
+    // grid — scaled-up boards actually carry scaled-up snake counts and
+    // lengths now, instead of centring a small layout on a huge blank
+    // field like the first #36 iteration did.
+    private static int DetermineBoardSize(int levelIndex, int maxBoardSide)
+    {
+        var cap = Math.Max(MinBoardSize, Math.Min(AbsoluteMaxBoardSize, maxBoardSide));
+        if (levelIndex >= FullBoardLevel)
+        {
+            return cap;
+        }
+        // Tutorial ramp: level 1 → MinBoardSize, level FullBoardLevel →
+        // full terminal. Linear so the grid visibly grows every level
+        // in the first few puzzles instead of staying cramped in the
+        // middle of a huge terminal (#36 image review: level 8 was
+        // half-empty on a 50-wide screen).
+        var tutorialRange = cap - MinBoardSize;
+        var scaled = MinBoardSize + (tutorialRange * (levelIndex - 1)) / (FullBoardLevel - 1);
+        return Math.Clamp(scaled, MinBoardSize, cap);
+    }
+
+    // Level at which the board is expected to already fill the entire
+    // terminal. Beyond this point the difficulty ramps via snake count
+    // and length instead of size.
+    private const int FullBoardLevel = 5;
+
     private static Board? TryBuildAcceptableBoard(Random random, DifficultyProfile profile, bool requireChallenge)
     {
         var board = TryBuildBoard(random, profile);
@@ -73,7 +112,12 @@ public sealed class BoardGenerator
         {
             return null;
         }
-        return Solver.TrySolve(board) is null ? null : board;
+        // Greedy-only solvability check — BFS is prohibitively expensive
+        // on the 40+ wide boards level 100+ produces (6 GB / 4 s in the
+        // pre-change benchmark). Boards that only succeed via partial-
+        // move trickery are rare; rejecting them in generation is fine
+        // because the caller just retries with the next seed.
+        return Solver.TryGreedySolve(board) is null ? null : board;
     }
 
     /// <summary>
@@ -111,16 +155,43 @@ public sealed class BoardGenerator
         return false;
     }
 
-    private static int CombineSeed(int baseSeed, int attempt) =>
-        unchecked(baseSeed * 397 ^ attempt);
+    private static int CombineSeed(int baseSeed, int attempt)
+    {
+        // Splitmix-style deterministic mixer. The old `baseSeed * 397
+        // ^ attempt` occasionally produced correlated bad runs where
+        // 500 consecutive attempts all failed (#36 image review: level
+        // 512 on a 60-wide terminal kept falling back). Need a mixer
+        // that (a) is stable across .NET sessions — unlike HashCode.Combine
+        // — and (b) actually spreads bits across the output.
+        unchecked
+        {
+            var x = (uint)baseSeed * 2654435761U;
+            x ^= (uint)attempt * 40503U;
+            x ^= x >> 16;
+            x *= 2246822519U;
+            x ^= x >> 13;
+            x *= 3266489917U;
+            x ^= x >> 16;
+            return (int)x;
+        }
+    }
 
     private static Board? TryBuildBoard(Random random, DifficultyProfile profile)
     {
         var occupied = new HashSet<Cell>();
         var snakes = new List<Snake>(profile.SnakeCount);
+        // Every snake is a "starter" — head biased toward its exit
+        // border — but the starter zone is wider than the 4-cell strip
+        // the first pass used: heads now sit within ~a third of the
+        // inner side of the border, so the forward ray typically has
+        // to cross several other snakes' bodies before reaching the
+        // edge. That's the ordering challenge (#36 image review:
+        // "9 of 11 snakes at the edges facing outwards — trivial").
+        var starters = profile.SnakeCount;
         for (var i = 0; i < profile.SnakeCount; i++)
         {
-            var snake = TryPlaceSnake(random, profile, occupied, (SnakeColor)i);
+            var isStarter = i < starters;
+            var snake = TryPlaceSnake(random, profile, occupied, (SnakeColor)(i % ColorCount), isStarter);
             if (snake is null)
             {
                 return null;
@@ -135,11 +206,11 @@ public sealed class BoardGenerator
     }
 
     private static Snake? TryPlaceSnake(
-        Random random, DifficultyProfile profile, HashSet<Cell> occupied, SnakeColor color)
+        Random random, DifficultyProfile profile, HashSet<Cell> occupied, SnakeColor color, bool biasHeadToBorder)
     {
         for (var attempt = 0; attempt < SnakePlacementAttempts; attempt++)
         {
-            var seed = PickSeedPair(random, profile.Size, occupied);
+            var seed = PickSeedPair(random, profile.Size, occupied, biasHeadToBorder);
             if (seed is null)
             {
                 continue;
@@ -159,21 +230,61 @@ public sealed class BoardGenerator
     }
 
     private static (Cell Head, Cell Second)? PickSeedPair(
-        Random random, int size, HashSet<Cell> occupied)
+        Random random, int size, HashSet<Cell> occupied, bool biasHeadToBorder)
     {
-        var head = new Cell(random.Next(size), random.Next(size));
-        if (occupied.Contains(head))
+        var innerMax = size - 2;
+        if (innerMax < 1)
         {
             return null;
         }
         var direction = AllDirections[random.Next(AllDirections.Length)];
+        var head = biasHeadToBorder
+            ? PickHeadNearExitBorder(random, size, direction)
+            : PickHeadAnywhere(random, size);
+        if (occupied.Contains(head))
+        {
+            return null;
+        }
         var second = head + direction.Opposite().Delta();
-        if (!InBounds(second, size) || occupied.Contains(second))
+        if (!IsInnerCell(second, size) || occupied.Contains(second))
         {
             return null;
         }
         return (head, second);
     }
+
+    private static Cell PickHeadAnywhere(Random random, int size)
+    {
+        // Unbiased head placement — forward ray will often cross other
+        // snakes. These "middle" snakes make the ordering puzzle hard.
+        var innerMax = size - 2;
+        return new Cell(1 + random.Next(innerMax), 1 + random.Next(innerMax));
+    }
+
+    private static Cell PickHeadNearExitBorder(Random random, int size, Direction direction)
+    {
+        // Starter snakes sit within the "exit-side quarter" of the
+        // inner region — far enough from the border that the forward
+        // ray typically crosses one or two other snakes' bodies (which
+        // is the ordering-puzzle challenge), but close enough that the
+        // pure-greedy solver reliably finds a release order before
+        // the generator exhausts its seed budget.
+        var innerMax = size - 2;
+        var band = Math.Max(3, innerMax / 4);
+        var front = 1 + innerMax - band + random.Next(band);
+        var back = 1 + random.Next(innerMax);
+        return direction switch
+        {
+            Direction.Right => new Cell(front, back),
+            Direction.Left => new Cell(size - 1 - front, back),
+            Direction.Down => new Cell(back, front),
+            Direction.Up => new Cell(back, size - 1 - front),
+            _ => new Cell(back, back),
+        };
+    }
+
+    private static bool IsInnerCell(Cell cell, int size) =>
+        cell.X >= 1 && cell.X <= size - 2 && cell.Y >= 1 && cell.Y <= size - 2;
 
     private static List<Cell> GrowSnake(
         Random random, int size, HashSet<Cell> occupied, Cell head, Cell second, int targetLength)
@@ -222,47 +333,76 @@ public sealed class BoardGenerator
         {
             return false;
         }
-        if (!InBounds(candidate, size))
+        if (!IsInnerCell(candidate, size))
         {
             return false;
         }
         return !occupied.Contains(candidate) && !local.Contains(candidate);
     }
 
-    private static bool InBounds(Cell cell, int size) =>
-        cell.X >= 0 && cell.X < size && cell.Y >= 0 && cell.Y < size;
-
     private static Board FallbackBoard(DifficultyProfile profile)
     {
-        // Minimal safe board: place parallel snakes one per row, each heading right.
+        // Minimal safe board: place parallel snakes one per row inside the
+        // padded inner region so every fallback snake still satisfies the
+        // "≥ 1 cell from the border" rule (#36).
         var snakes = new List<Snake>();
-        var colors = Enum.GetValues<SnakeColor>();
-        for (var i = 0; i < profile.SnakeCount && i < colors.Length; i++)
+        for (var i = 0; i < profile.SnakeCount && i + 1 < profile.Size - 1; i++)
         {
-            if (i >= profile.Size)
-            {
-                break;
-            }
-            var head = new Cell(1, i);
-            var second = new Cell(0, i);
-            snakes.Add(new Snake(new[] { head, second }, colors[i]));
+            var color = (SnakeColor)(i % ColorCount);
+            var head = new Cell(2, i + 1);
+            var second = new Cell(1, i + 1);
+            snakes.Add(new Snake(new[] { head, second }, color));
         }
         return new Board(profile.Size, snakes);
     }
 
     internal sealed record DifficultyProfile(int Size, int SnakeCount, int MinSnakeLength, int MaxSnakeLength)
     {
-        // Level 1 stays friendly (3-4 cell snakes on a 6x6). Snakes grow quickly
-        // from there so by ~level 7 the maximum passes 10 cells; boards widen
-        // in step so the density stays manageable for the solver.
-        public static DifficultyProfile For(int levelIndex)
+        // Snake counts and lengths scale with the ACTUAL board size now
+        // (issue #36 follow-up): on a 40x40 grid at level 999 we want
+        // a double-digit snake count with snakes long enough to wrap
+        // most of the way around the field, not 8 tutorial-sized snakes
+        // clustered in the middle.
+        public static DifficultyProfile For(int levelIndex, int boardSize)
         {
-            var size = Math.Clamp(MinBoardSize + levelIndex / 2, MinBoardSize, MaxBoardSize);
-            var snakeCount = Math.Clamp(3 + levelIndex / 3, 3, MaxSnakesPerBoard);
-            var minLen = Math.Clamp(AbsoluteMinSnakeLength + levelIndex / 4, AbsoluteMinSnakeLength, MaxSegmentLength);
-            var rawMax = AbsoluteMinSnakeLength + levelIndex;
-            var maxLen = Math.Clamp(Math.Max(rawMax, minLen + 1), AbsoluteMinSnakeLength + 1, MaxSegmentLength);
-            return new DifficultyProfile(size, snakeCount, minLen, maxLen);
+            var inner = Math.Max(1, boardSize - 2);
+            var snakeCount = ComputeSnakeCount(levelIndex, inner);
+            // Push every snake to a solid chunk of the inner side, so
+            // even low-level puzzles on the full-terminal board don't
+            // look empty. Cap maxLen by the per-snake budget so the
+            // random walk + greedy solver can still fit everything.
+            var minLen = Math.Clamp(
+                AbsoluteMinSnakeLength + levelIndex / 3,
+                Math.Max(AbsoluteMinSnakeLength, inner / 4),
+                Math.Max(AbsoluteMinSnakeLength, inner / 2));
+            var levelDriven = AbsoluteMinSnakeLength + levelIndex * 2;
+            var sizeFloor = inner;
+            var rawMax = Math.Max(levelDriven, sizeFloor);
+            // Per-snake cell budget to keep coverage around ~40% — the
+            // placement sweet spot where dense random-walk snakes
+            // almost always fit but the board still feels full.
+            var perSnakeBudget = Math.Max(minLen + 1, (inner * inner * 2) / (5 * Math.Max(1, snakeCount)));
+            var maxLen = Math.Clamp(
+                Math.Min(rawMax, perSnakeBudget),
+                AbsoluteMinSnakeLength + 1,
+                MaxSegmentLength);
+            return new DifficultyProfile(boardSize, snakeCount, minLen, maxLen);
+        }
+
+        private static int ComputeSnakeCount(int levelIndex, int inner)
+        {
+            // Snake count scales with the inner side: ~inner/3 gives
+            // decent density without starving the random-walk placement
+            // of free cells. On a 50-wide board that's 16 snakes; with
+            // maxLen up to inner they approach ~45 % coverage. Higher
+            // counts run into solver fallbacks (#36 image review).
+            var levelDriven = 3 + levelIndex / 3;
+            var sizeFloor = inner / 3;
+            var sizeCap = Math.Max(8, sizeFloor);
+            return Math.Clamp(
+                Math.Max(levelDriven, sizeFloor),
+                3,
+                Math.Min(MaxSnakesPerBoard, sizeCap));
         }
     }
 }

@@ -3,6 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Threading.Channels;
 using Spectre.Console;
 using TerminalSnake.Game;
+using TerminalSnake.Generation;
 using TerminalSnake.Input;
 using TerminalSnake.Rendering;
 
@@ -30,10 +31,21 @@ internal static class Program
 
     private static int Run()
     {
-        var engine = new GameEngine(hudStrings: HudLocalization.ForCurrentEnvironment());
-        // Probe once up-front so we fail fast if the terminal is too small
-        // for the starting board; the live loop rebuilds the viewport on
-        // every tick so later level transitions pick up a new board size.
+        // Probe the terminal up front so the engine can size its boards
+        // to the screen — "game area too small" (issue #36) was the
+        // generator hard-capping at 16 regardless of how much real estate
+        // the terminal actually offered. MaxBoardSide falls back to the
+        // generator's cap when the terminal is small, so the minimum
+        // tutorial layout still fits.
+        var maxBoardSide = Math.Max(
+            BoardGenerator.MinBoardSize,
+            ViewportCalculator.MaxBoardSide(Console.WindowWidth, Console.WindowHeight));
+        var engine = new GameEngine(
+            hudStrings: HudLocalization.ForCurrentEnvironment(),
+            maxBoardSide: maxBoardSide);
+        // Probe once so we fail fast if the terminal is too small for the
+        // starting board; the live loop rebuilds the viewport on every
+        // tick so later level transitions pick up a new board size.
         _ = engine.BuildViewport(Console.WindowWidth, Console.WindowHeight);
 
         using var terminalMode = new TerminalMode();
@@ -124,7 +136,7 @@ internal static class Program
     {
         switch (evt)
         {
-            case KeyEvent key when IsQuitKey(key):
+            case KeyEvent key when IsQuitKey(key, engine):
                 cts.Cancel();
                 return;
             case KeyEvent key:
@@ -140,8 +152,11 @@ internal static class Program
         }
     }
 
-    private static bool IsQuitKey(KeyEvent key) =>
-        key.Key == ConsoleKey.Q || key.Key == ConsoleKey.Escape;
+    // Esc also cancels the level-jump prompt (#36), so while the prompt
+    // is open we hand the key to the engine instead of quitting the app.
+    private static bool IsQuitKey(KeyEvent key, GameEngine engine) =>
+        key.Key == ConsoleKey.Q
+        || (key.Key == ConsoleKey.Escape && !engine.LevelPromptActive);
 
     private static (int BoardX, int BoardY) TerminalToBoard(MouseClickEvent click, Viewport viewport) =>
         ((click.Column - viewport.BoardOriginX) / ViewportCalculator.CellCharWidth,

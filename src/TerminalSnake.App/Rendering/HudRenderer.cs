@@ -3,7 +3,13 @@ using TerminalSnake.Game;
 
 namespace TerminalSnake.Rendering;
 
-public sealed record HudModel(int LevelIndex, GameMode Mode, bool HelpVisible, HudStrings Strings);
+public sealed record HudModel(
+    int LevelIndex,
+    GameMode Mode,
+    bool HelpVisible,
+    HudStrings Strings,
+    bool LevelPromptActive = false,
+    string LevelPromptInput = "");
 
 public sealed class HudRenderer
 {
@@ -16,6 +22,22 @@ public sealed class HudRenderer
         if (model.HelpVisible)
         {
             DrawHelpLegend(buffer, viewport, model);
+        }
+        if (model.LevelPromptActive)
+        {
+            DrawLevelPrompt(buffer, viewport, model);
+        }
+    }
+
+    private static void DrawLevelPrompt(FrameBuffer buffer, Viewport viewport, HudModel model)
+    {
+        // Drawn on the bottom HUD row where the "press H for help" hint
+        // normally lives — the prompt takes priority while it is open.
+        var text = $"{model.Strings.LevelPromptLabel}: {model.LevelPromptInput}_";
+        WriteText(buffer, x: 1, y: viewport.BottomHudRow, text);
+        for (var x = 1 + text.Length; x < viewport.TerminalWidth - 1; x++)
+        {
+            buffer.Set(x, viewport.BottomHudRow, ' ');
         }
     }
 

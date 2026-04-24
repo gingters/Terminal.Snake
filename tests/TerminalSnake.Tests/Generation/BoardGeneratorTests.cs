@@ -22,12 +22,65 @@ public sealed class BoardGeneratorTests
         var generator = new BoardGenerator();
         var board = generator.Generate(levelIndex, seed: 42);
 
+        // Default (no explicit terminal cap) keeps the board within the
+        // original [MinBoardSize, MaxBoardSize] range so tutorial-tight
+        // density is preserved for tests and fallback paths.
         Assert.InRange(board.Size, BoardGenerator.MinBoardSize, BoardGenerator.MaxBoardSize);
         Assert.InRange(board.Snakes.Length, 1, BoardGenerator.MaxSnakesPerBoard);
         foreach (var snake in board.Snakes)
         {
             Assert.InRange(snake.Segments.Length, 2, BoardGenerator.MaxSegmentLength);
         }
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(5)]
+    [InlineData(10)]
+    public void Snakes_sit_at_least_one_cell_away_from_every_border(int levelIndex)
+    {
+        // #36: the outermost snake cell must leave at least one blank cell
+        // before the border so the play area no longer feels packed.
+        var generator = new BoardGenerator();
+        var board = generator.Generate(levelIndex, seed: 42);
+        foreach (var snake in board.Snakes)
+        {
+            foreach (var cell in snake.Segments)
+            {
+                Assert.InRange(cell.X, 1, board.Size - 2);
+                Assert.InRange(cell.Y, 1, board.Size - 2);
+            }
+        }
+    }
+
+    [Fact]
+    public void Board_grows_with_the_level_when_the_terminal_allows_it()
+    {
+        // #36 follow-up: on big terminals the board must keep growing with
+        // the level, not plateau at the default placement cap. With a
+        // large maxBoardSide, level 50 produces a much bigger board than
+        // level 1.
+        var generator = new BoardGenerator();
+        var small = generator.Generate(1, seed: 42, maxBoardSide: 40);
+        var large = generator.Generate(50, seed: 42, maxBoardSide: 40);
+        Assert.True(large.Size > small.Size, $"level 50 ({large.Size}) should be larger than level 1 ({small.Size})");
+        Assert.True(large.Size <= 40, "board never exceeds the supplied terminal cap");
+    }
+
+    [Fact]
+    public void Snake_count_and_length_scale_up_on_big_terminals()
+    {
+        // #36 follow-up — #36 image review: level 999 on a 40x40 board
+        // used to ship 8 stubby snakes clustered in the middle. The
+        // generator now scales both the snake count and the max length
+        // with the actual board size so the play area actually gets used.
+        var generator = new BoardGenerator();
+        var huge = generator.Generate(999, seed: 42, maxBoardSide: 40);
+        var longest = huge.Snakes.Max(s => s.Segments.Length);
+        Assert.True(huge.Snakes.Length >= 9,
+            $"expected ≥ 9 snakes on the huge board, got {huge.Snakes.Length}");
+        Assert.True(longest >= 20,
+            $"expected the longest snake to be ≥ 20 cells, got {longest}");
     }
 
     [Fact]

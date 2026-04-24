@@ -18,7 +18,7 @@ public sealed class LevelManager
         _generator = generator;
     }
 
-    public Board LoadLevel(int levelIndex)
+    public Board LoadLevel(int levelIndex, int maxBoardSide = BoardGenerator.MaxBoardSize)
     {
         if (levelIndex < 1)
         {
@@ -27,9 +27,9 @@ public sealed class LevelManager
         }
         if (levelIndex <= FixedLevels.Count)
         {
-            return FixedLevels.Get(levelIndex);
+            return FixedLevels.Get(levelIndex, maxBoardSide);
         }
-        return _generator.Generate(levelIndex, ComputeSeed(levelIndex));
+        return _generator.Generate(levelIndex, ComputeSeed(levelIndex), maxBoardSide);
     }
 
     private static int ComputeSeed(int levelIndex) => unchecked(levelIndex * 7919 + 42);
