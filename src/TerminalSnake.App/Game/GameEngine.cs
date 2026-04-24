@@ -184,8 +184,8 @@ public sealed class GameEngine
     public FrameBuffer Render(Viewport viewport, TimeSpan now)
     {
         var buffer = new FrameBuffer(viewport.TerminalWidth, viewport.TerminalHeight);
-        var (visibleBoard, overlay) = ApplyAnimationSnapshot(_currentBoard, now);
-        _renderer.Render(buffer, visibleBoard, viewport, SelectedSnakeIndex, overlay);
+        var (visibleBoard, overlay, effectiveSelection) = ApplyAnimationSnapshot(_currentBoard, now);
+        _renderer.Render(buffer, visibleBoard, viewport, effectiveSelection, overlay);
         _hudRenderer.Render(buffer, viewport, new HudModel(LevelIndex, Mode, HelpVisible, _hudStrings));
         return buffer;
     }
@@ -440,13 +440,13 @@ public sealed class GameEngine
         _lastDemoMoveAt = now;
     }
 
-    private (Board Board, IReadOnlyDictionary<Cell, SnakeColor>? Overlay)
+    private (Board Board, IReadOnlyDictionary<Cell, SnakeColor>? Overlay, int? Selection)
         ApplyAnimationSnapshot(Board board, TimeSpan now)
     {
         var snapshot = _animation.Current(now);
         if (snapshot is null)
         {
-            return (board, null);
+            return (board, null, SelectedSnakeIndex);
         }
 
         var original = board.Snakes[snapshot.Value.SnakeIndex];
@@ -454,13 +454,17 @@ public sealed class GameEngine
         {
             var replaced = new Snake(snapshot.Value.Segments, original.Color);
             var updated = board.Snakes.SetItem(snapshot.Value.SnakeIndex, replaced);
-            return (board.WithSnakes(updated), null);
+            return (board.WithSnakes(updated), null, SelectedSnakeIndex);
         }
 
         // Final frames of an exit animation: the snake has shrunk below the
         // two-segment minimum Snake requires for a valid direction. Drop it
         // from the board and paint the leftover segment (if any) as a plain
         // overlay cell so the tail still animates cell-by-cell off-screen.
+        // Suppress the selection highlight too — the exiting snake's slot
+        // has been filled by whichever snake shifted down, and highlighting
+        // *that* one for a couple of frames before FinalizeAnimation clears
+        // the selection produces a flicker (#29).
         var trimmedSnakes = board.Snakes.RemoveAt(snapshot.Value.SnakeIndex);
         var trimmedBoard = board.WithSnakes(trimmedSnakes);
         if (snapshot.Value.Segments.Length == 1)
@@ -469,8 +473,8 @@ public sealed class GameEngine
             {
                 [snapshot.Value.Segments[0]] = original.Color,
             };
-            return (trimmedBoard, overlay);
+            return (trimmedBoard, overlay, null);
         }
-        return (trimmedBoard, null);
+        return (trimmedBoard, null, null);
     }
 }
