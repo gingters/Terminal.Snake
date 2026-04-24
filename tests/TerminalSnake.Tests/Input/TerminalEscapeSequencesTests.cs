@@ -24,4 +24,12 @@ public sealed class TerminalEscapeSequencesTests
         Assert.Equal("\x1b[?25l", TerminalEscapeSequences.HideCursor);
         Assert.Equal("\x1b[?25h", TerminalEscapeSequences.ShowCursor);
     }
+
+    [Fact]
+    public void Clear_screen_sequence_wipes_the_screen_and_homes_the_cursor()
+    {
+        // Shutdown path emits this so the game board is not left on the
+        // terminal when the player quits (#22). CSI 2J clears, CSI H homes.
+        Assert.Equal("\x1b[2J\x1b[H", TerminalEscapeSequences.ClearScreen);
+    }
 }
