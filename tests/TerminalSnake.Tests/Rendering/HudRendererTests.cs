@@ -7,7 +7,10 @@ public sealed class HudRendererTests
 {
     private static (FrameBuffer Buffer, Viewport Viewport) SetupBuffer()
     {
-        var viewport = ViewportCalculator.Compute(60, 20, 8);
+        // Keep the sandbox terminal wide enough that the legend's full text
+        // fits on one row — otherwise the renderer's graceful clipping
+        // hides the shortcuts we want to assert on.
+        var viewport = ViewportCalculator.Compute(100, 20, 8);
         var buffer = new FrameBuffer(viewport.TerminalWidth, viewport.TerminalHeight);
         return (buffer, viewport);
     }
@@ -68,6 +71,7 @@ public sealed class HudRendererTests
         Assert.Contains("Enter", topLegend);
         Assert.Contains("restart", bottomLegend);
         Assert.Contains("toggle", bottomLegend);
+        Assert.Contains("auto-play", bottomLegend);
         Assert.Contains("Q", bottomLegend);
     }
 

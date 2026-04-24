@@ -11,6 +11,9 @@ public sealed class GameEngine
     private static readonly TimeSpan DefaultAnimationStep = TimeSpan.FromMilliseconds(80);
     private static readonly TimeSpan DefaultIdleThreshold = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan DefaultDemoMovePause = TimeSpan.FromMilliseconds(250);
+    // Shorter than the cold-start idle threshold: if the user explicitly
+    // re-arms auto-play with D, the demo should kick off quickly (#16).
+    private static readonly TimeSpan DefaultDemoArmDelay = TimeSpan.FromSeconds(1);
 
     private readonly LevelManager _levels;
     private readonly AnimationScheduler _animation;
@@ -19,12 +22,14 @@ public sealed class GameEngine
     private readonly HudRenderer _hudRenderer;
     private readonly HudStrings _hudStrings;
     private readonly TimeSpan _demoMovePause;
+    private readonly TimeSpan _demoArmDelay;
 
     private Board _currentBoard;
     private Board? _pendingBoardAfterAnimation;
     private int _preAnimationSnakeCount;
     private Queue<int> _demoQueue = new();
     private TimeSpan _lastDemoMoveAt = TimeSpan.Zero;
+    private TimeSpan? _demoArmedAt;
 
     public GameEngine(
         LevelManager? levels = null,
@@ -34,6 +39,7 @@ public sealed class GameEngine
         HudRenderer? hudRenderer = null,
         HudStrings? hudStrings = null,
         TimeSpan? demoMovePause = null,
+        TimeSpan? demoArmDelay = null,
         int startLevel = 1)
     {
         _levels = Or(levels, DefaultLevels);
@@ -43,6 +49,7 @@ public sealed class GameEngine
         _hudRenderer = Or(hudRenderer, DefaultHudRenderer);
         _hudStrings = Or(hudStrings, DefaultHudStrings);
         _demoMovePause = demoMovePause ?? DefaultDemoMovePause;
+        _demoArmDelay = demoArmDelay ?? DefaultDemoArmDelay;
         LevelIndex = startLevel;
         _currentBoard = _levels.LoadLevel(startLevel);
     }
@@ -72,6 +79,12 @@ public sealed class GameEngine
     // flips it off; H toggles it at will. See issue #15.
     public bool HelpVisible { get; private set; } = true;
 
+    // Starts true so auto-play kicks in after the idle threshold on a fresh
+    // game. The first gameplay input turns it off permanently (until the
+    // player presses D to re-arm it), so stepping away for a coffee on
+    // level 4 does not cause level 5 to start playing itself. See issue #16.
+    public bool AutoPlayEnabled { get; private set; } = true;
+
     public void HandleKey(KeyEvent key, TimeSpan now)
     {
         ArgumentNullException.ThrowIfNull(key);
@@ -87,6 +100,8 @@ public sealed class GameEngine
     {
         NoteInputActivity(now);
         HelpVisible = false;
+        AutoPlayEnabled = false;
+        _demoArmedAt = null;
         if (_animation.IsBusy)
         {
             return;
@@ -137,10 +152,25 @@ public sealed class GameEngine
 
     private void TickDemoModeTransition(TimeSpan now)
     {
-        if (Mode == GameMode.Player && _idle.HasIdledOut(now))
+        if (!AutoPlayEnabled || Mode != GameMode.Player)
+        {
+            return;
+        }
+        if (ShouldEnterDemo(now))
         {
             EnterDemoMode();
         }
+    }
+
+    private bool ShouldEnterDemo(TimeSpan now)
+    {
+        // An explicit D re-arm starts a short fuse that ignores the normal
+        // 30-second idle threshold — the player just asked for auto-play.
+        if (_demoArmedAt is { } armedAt && now - armedAt >= _demoArmDelay)
+        {
+            return true;
+        }
+        return _idle.HasIdledOut(now);
     }
 
     private void TickDemoPlayback(TimeSpan now)
@@ -177,12 +207,34 @@ public sealed class GameEngine
 
     private void DispatchKey(KeyEvent key, TimeSpan now)
     {
-        if (key.Key == ConsoleKey.H)
+        if (HandleMetaKey(key, now))
         {
-            HelpVisible = !HelpVisible;
             return;
         }
         HelpVisible = false;
+        AutoPlayEnabled = false;
+        _demoArmedAt = null;
+        DispatchGameplayKey(key, now);
+    }
+
+    private bool HandleMetaKey(KeyEvent key, TimeSpan now)
+    {
+        if (key.Key == ConsoleKey.H)
+        {
+            HelpVisible = !HelpVisible;
+            return true;
+        }
+        if (key.Key == ConsoleKey.D)
+        {
+            AutoPlayEnabled = true;
+            _demoArmedAt = now;
+            return true;
+        }
+        return false;
+    }
+
+    private void DispatchGameplayKey(KeyEvent key, TimeSpan now)
+    {
         if (key.Key == ConsoleKey.Tab)
         {
             CycleSelection(key.Shift ? -1 : +1);
@@ -299,8 +351,30 @@ public sealed class GameEngine
         LevelIndex += 1;
         _currentBoard = _levels.LoadLevel(LevelIndex);
         SelectedSnakeIndex = null;
-        Mode = GameMode.Player;
         _demoQueue.Clear();
+
+        if (Mode == GameMode.Demo)
+        {
+            // If auto-play finished the previous level, keep running on the
+            // next one without waiting for the idle threshold again — the
+            // user asked for auto-play and hasn't taken over. Reload the
+            // solver for the fresh board and reset the dequeue pacing.
+            ReloadDemoQueueForCurrentBoard();
+            _lastDemoMoveAt = TimeSpan.Zero;
+            HelpVisible = true;
+            return;
+        }
+
+        Mode = GameMode.Player;
+    }
+
+    private void ReloadDemoQueueForCurrentBoard()
+    {
+        var solution = Solver.TrySolve(_currentBoard);
+        if (solution is not null)
+        {
+            _demoQueue = new Queue<int>(solution);
+        }
     }
 
     private void EnterDemoMode()
@@ -308,10 +382,9 @@ public sealed class GameEngine
         Mode = GameMode.Demo;
         SelectedSnakeIndex = null;
         HelpVisible = true;
-        var solution = Solver.TrySolve(_currentBoard);
-        _demoQueue = solution is null
-            ? new Queue<int>()
-            : new Queue<int>(solution);
+        _demoArmedAt = null;
+        _demoQueue.Clear();
+        ReloadDemoQueueForCurrentBoard();
         _lastDemoMoveAt = TimeSpan.Zero;
     }
 

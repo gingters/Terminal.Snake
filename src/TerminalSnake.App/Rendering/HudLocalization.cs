@@ -9,6 +9,7 @@ public sealed record HudStrings(
     string HelpEnter,
     string HelpR,
     string HelpH,
+    string HelpD,
     string HelpQ);
 
 public static class HudLocalization
@@ -30,6 +31,7 @@ public static class HudLocalization
                 HelpEnter: "Enter / Space — release selected snake",
                 HelpR: "R — restart level",
                 HelpH: "H — toggle help",
+                HelpD: "D — re-enable auto-play",
                 HelpQ: "Q / Esc — quit"),
             ["de"] = new(
                 Title: "TerminalSnake",
@@ -40,6 +42,7 @@ public static class HudLocalization
                 HelpEnter: "Enter / Leertaste — Schlange befreien",
                 HelpR: "R — Level neu starten",
                 HelpH: "H — Hilfe ein-/ausblenden",
+                HelpD: "D — Auto-Spiel aktivieren",
                 HelpQ: "Q / Esc — beenden"),
             ["fr"] = new(
                 Title: "TerminalSnake",
@@ -50,6 +53,7 @@ public static class HudLocalization
                 HelpEnter: "Entrée / Espace — libérer le serpent",
                 HelpR: "R — recommencer le niveau",
                 HelpH: "H — afficher l'aide",
+                HelpD: "D — réactiver la démonstration",
                 HelpQ: "Q / Échap — quitter"),
             ["es"] = new(
                 Title: "TerminalSnake",
@@ -60,6 +64,7 @@ public static class HudLocalization
                 HelpEnter: "Intro / Espacio — liberar serpiente",
                 HelpR: "R — reiniciar nivel",
                 HelpH: "H — mostrar ayuda",
+                HelpD: "D — reactivar la demostración",
                 HelpQ: "Q / Esc — salir"),
             ["it"] = new(
                 Title: "TerminalSnake",
@@ -70,6 +75,7 @@ public static class HudLocalization
                 HelpEnter: "Invio / Spazio — rilasciare serpente",
                 HelpR: "R — ricomincia livello",
                 HelpH: "H — mostra aiuto",
+                HelpD: "D — riattiva la dimostrazione",
                 HelpQ: "Q / Esc — esci"),
             ["pt"] = new(
                 Title: "TerminalSnake",
@@ -80,6 +86,7 @@ public static class HudLocalization
                 HelpEnter: "Enter / Espaço — libertar cobra",
                 HelpR: "R — reiniciar nível",
                 HelpH: "H — alternar ajuda",
+                HelpD: "D — reativar a reprodução automática",
                 HelpQ: "Q / Esc — sair"),
             ["nl"] = new(
                 Title: "TerminalSnake",
@@ -90,6 +97,7 @@ public static class HudLocalization
                 HelpEnter: "Enter / Spatie — slang vrijlaten",
                 HelpR: "R — level herstarten",
                 HelpH: "H — hulp tonen",
+                HelpD: "D — auto-modus herinschakelen",
                 HelpQ: "Q / Esc — afsluiten"),
         };
 
