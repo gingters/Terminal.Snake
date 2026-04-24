@@ -36,6 +36,16 @@ dotnet run --project src/TerminalSnake.App
 
 Terminal needs to be at least 40×15. SGR-1006 mouse reporting is required for click input; iTerm2, macOS Terminal, Windows Terminal, kitty, and Alacritty all support it by default.
 
+## Downloads
+
+Native-AoT self-contained binaries are attached to every GitHub release for:
+
+- `linux-x64`, `linux-arm64` — `.tar.gz`
+- `win-x64`, `win-arm64` — `.zip`
+- `osx-arm64` — `.tar.gz` (OpenSSL and Brotli dylibs are bundled alongside the binary; `@executable_path` is already rewritten so the binary is self-contained)
+
+Download the archive for your platform, extract it, and run `terminal-snake` (or `terminal-snake.exe` on Windows). No .NET runtime required.
+
 ## Tests & Quality Gate
 
 ```
@@ -51,6 +61,20 @@ The quality gate runs tests with coverage, produces an HTML report under `artifa
 - overall line coverage < 85 % or branch coverage < 75 %
 
 Per-method complexity comes straight from the Cobertura XML that coverlet emits; the gate walks every `coverage.cobertura.xml` under `artifacts/coverage/` and reports every failing method.
+
+## Releases
+
+Releases are driven by [release-please](https://github.com/googleapis/release-please-action) from Conventional Commits on `main`:
+
+1. Each merge to `main` updates (or creates) a release PR titled `chore: release X.Y.Z`. The PR bumps `.github/.release-please-manifest.json` and prepends a `CHANGELOG.md` entry from the commits since the last tag.
+2. Merging that PR tags the release (`vX.Y.Z`) and publishes a GitHub Release.
+3. The `Release Artifacts` workflow picks up the published release event, builds Native-AoT binaries across the five RIDs, and attaches them to the release.
+
+Bump rules while pre-1.0: `feat:` bumps minor, `fix:` bumps patch, breaking changes (`!`) bump minor. Hidden from the changelog: `chore`, `ci`, `build`, `test`.
+
+## CI
+
+`.github/workflows/ci.yml` runs the full quality gate on every PR to `main` and every push to `main`, uploads the HTML coverage report as a build artifact, and fails the PR if any gate threshold is violated.
 
 ## Architecture at a glance
 
