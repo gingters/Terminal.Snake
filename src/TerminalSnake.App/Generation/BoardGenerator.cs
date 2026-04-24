@@ -18,7 +18,7 @@ public sealed class BoardGenerator
     // colours in SnakeColor and we cycle past that for very large boards,
     // so snakes on big boards may repeat a colour — the player still reads
     // them apart by their position on the grid.
-    public const int MaxSnakesPerBoard = 32;
+    public const int MaxSnakesPerBoard = 48;
     private const int ColorCount = 8;
 
     // Long-snake profiles make random-walk placement harder; allow more
@@ -147,15 +147,14 @@ public sealed class BoardGenerator
     {
         var occupied = new HashSet<Cell>();
         var snakes = new List<Snake>(profile.SnakeCount);
-        // Every snake's head is biased toward its exit border at first
-        // (StarterBand = 4 cells away), but the random-walk body grows
-        // backward through the rest of the inner region so most snakes
-        // still end up crossing each other's forward rays. That's the
-        // ordering challenge: even though every head is near an edge,
-        // the tangled bodies block the paths, and greedy has to release
-        // them in the right sequence. Fewer starters than this regularly
-        // deadlocked the middle snakes and dropped to the fallback
-        // (#36 image review).
+        // Every snake starts with its head biased toward its exit border
+        // — that's what lets the greedy solver always find an opening
+        // move at every stage, even on 60-wide puzzles. The random-walk
+        // body grows backward *into the middle* of the board, so snakes
+        // still cross each other's forward rays and the ordering puzzle
+        // isn't trivial. Any lower starter share regularly deadlocked
+        // the middle snakes and dropped back to the 2-segment fallback
+        // board (#36 image review).
         var starters = profile.SnakeCount;
         for (var i = 0; i < profile.SnakeCount; i++)
         {
@@ -343,7 +342,11 @@ public sealed class BoardGenerator
                 AbsoluteMinSnakeLength + levelIndex / 4,
                 AbsoluteMinSnakeLength,
                 Math.Max(AbsoluteMinSnakeLength, inner / 3));
-            var legacyMax = AbsoluteMinSnakeLength + levelIndex;
+            // Max length grows faster than the per-level delta — at
+            // mid levels (≈25) we want some snakes that genuinely span
+            // a good chunk of the board, not a handful of ~20-cell
+            // worms (#36 image review).
+            var legacyMax = AbsoluteMinSnakeLength + levelIndex * 2;
             // Cap snake length at ~inner so the random-walk placement
             // doesn't get stuck chasing its tail: total coverage stays
             // around 30 % (snakeCount × maxLen ÷ inner²), which the
@@ -359,13 +362,14 @@ public sealed class BoardGenerator
         private static int ComputeSnakeCount(int levelIndex, int inner)
         {
             // Legacy tutorial pacing for small boards (8 snakes at level
-            // 15 on a 16-grid). Size-driven term keeps density around
-            // one snake per four inner cells on big boards — denser than
-            // that and the greedy solver hits fallback too often on
-            // 60-wide puzzles (#36 image review).
+            // 15 on a 16-grid). On bigger boards the count scales with
+            // ~0.4 snakes per inner cell along the side — tuned so the
+            // 50x50 level-512 / 999 boards carry ~19 snakes of ~30 cells
+            // each (≈30 % coverage) without the random-walk placement
+            // falling off a cliff (#36 image reviews).
             var levelDriven = 3 + levelIndex / 3;
-            var sizeFloor = inner / 4;
-            var sizeCap = Math.Max(8, inner / 4);
+            var sizeFloor = (inner * 2) / 5;
+            var sizeCap = Math.Max(8, sizeFloor);
             return Math.Clamp(
                 Math.Max(levelDriven, sizeFloor),
                 3,
