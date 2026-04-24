@@ -16,6 +16,8 @@ public sealed class GameEngine
     private readonly AnimationScheduler _animation;
     private readonly IdleWatcher _idle;
     private readonly BoardRenderer _renderer;
+    private readonly HudRenderer _hudRenderer;
+    private readonly HudStrings _hudStrings;
     private readonly TimeSpan _demoMovePause;
 
     private Board _currentBoard;
@@ -29,17 +31,31 @@ public sealed class GameEngine
         IdleWatcher? idleWatcher = null,
         AnimationScheduler? animationScheduler = null,
         BoardRenderer? renderer = null,
+        HudRenderer? hudRenderer = null,
+        HudStrings? hudStrings = null,
         TimeSpan? demoMovePause = null,
         int startLevel = 1)
     {
-        _levels = levels ?? new LevelManager();
-        _idle = idleWatcher ?? new IdleWatcher(DefaultIdleThreshold);
-        _animation = animationScheduler ?? new AnimationScheduler(DefaultAnimationStep);
-        _renderer = renderer ?? new BoardRenderer();
+        _levels = Or(levels, DefaultLevels);
+        _idle = Or(idleWatcher, DefaultIdle);
+        _animation = Or(animationScheduler, DefaultAnimation);
+        _renderer = Or(renderer, DefaultBoardRenderer);
+        _hudRenderer = Or(hudRenderer, DefaultHudRenderer);
+        _hudStrings = Or(hudStrings, DefaultHudStrings);
         _demoMovePause = demoMovePause ?? DefaultDemoMovePause;
         LevelIndex = startLevel;
         _currentBoard = _levels.LoadLevel(startLevel);
     }
+
+    private static T Or<T>(T? value, Func<T> fallback) where T : class
+        => value ?? fallback();
+
+    private static LevelManager DefaultLevels() => new();
+    private static IdleWatcher DefaultIdle() => new(DefaultIdleThreshold);
+    private static AnimationScheduler DefaultAnimation() => new(DefaultAnimationStep);
+    private static BoardRenderer DefaultBoardRenderer() => new();
+    private static HudRenderer DefaultHudRenderer() => new();
+    private static HudStrings DefaultHudStrings() => HudLocalization.Default;
 
     public int LevelIndex { get; private set; }
 
@@ -50,6 +66,11 @@ public sealed class GameEngine
     public Board Board => _currentBoard;
 
     public bool IsAnimating => _animation.IsBusy;
+
+    // Starts true so the legend is visible at game start and during demo
+    // playback. Any gameplay-affecting input (Tab, Enter, Space, R, a click)
+    // flips it off; H toggles it at will. See issue #15.
+    public bool HelpVisible { get; private set; } = true;
 
     public void HandleKey(KeyEvent key, TimeSpan now)
     {
@@ -65,6 +86,7 @@ public sealed class GameEngine
     public void HandleBoardClick(int boardX, int boardY, TimeSpan now)
     {
         NoteInputActivity(now);
+        HelpVisible = false;
         if (_animation.IsBusy)
         {
             return;
@@ -134,6 +156,7 @@ public sealed class GameEngine
         var buffer = new FrameBuffer(viewport.TerminalWidth, viewport.TerminalHeight);
         var (visibleBoard, overlay) = ApplyAnimationSnapshot(_currentBoard, now);
         _renderer.Render(buffer, visibleBoard, viewport, SelectedSnakeIndex, overlay);
+        _hudRenderer.Render(buffer, viewport, new HudModel(LevelIndex, Mode, HelpVisible, _hudStrings));
         return buffer;
     }
 
@@ -154,6 +177,12 @@ public sealed class GameEngine
 
     private void DispatchKey(KeyEvent key, TimeSpan now)
     {
+        if (key.Key == ConsoleKey.H)
+        {
+            HelpVisible = !HelpVisible;
+            return;
+        }
+        HelpVisible = false;
         if (key.Key == ConsoleKey.Tab)
         {
             CycleSelection(key.Shift ? -1 : +1);
@@ -278,6 +307,7 @@ public sealed class GameEngine
     {
         Mode = GameMode.Demo;
         SelectedSnakeIndex = null;
+        HelpVisible = true;
         var solution = Solver.TrySolve(_currentBoard);
         _demoQueue = solution is null
             ? new Queue<int>()

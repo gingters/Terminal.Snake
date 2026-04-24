@@ -30,7 +30,7 @@ internal static class Program
 
     private static int Run()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(hudStrings: HudLocalization.ForCurrentEnvironment());
         // Probe once up-front so we fail fast if the terminal is too small
         // for the starting board; the live loop rebuilds the viewport on
         // every tick so later level transitions pick up a new board size.
