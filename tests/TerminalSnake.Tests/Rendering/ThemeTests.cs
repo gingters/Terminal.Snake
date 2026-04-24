@@ -35,4 +35,18 @@ public sealed class ThemeTests
         Assert.Equal(Theme.ToSpectre(SnakeColor.Red), style.Foreground);
         Assert.Equal(Theme.ToSpectre(SnakeColor.Cyan), style.Background);
     }
+
+    [Fact]
+    public void BuildStyle_with_reverse_applies_invert_decoration()
+    {
+        var style = Theme.BuildStyle(SnakeColor.Red, null, reverse: true);
+        Assert.True(style.Decoration.HasFlag(Decoration.Invert));
+    }
+
+    [Fact]
+    public void BuildStyle_without_reverse_has_no_invert_decoration()
+    {
+        var style = Theme.BuildStyle(SnakeColor.Red, null);
+        Assert.False(style.Decoration.HasFlag(Decoration.Invert));
+    }
 }

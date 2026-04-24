@@ -11,6 +11,7 @@ public sealed class BoardRenderer
     public const char BorderCornerBottomLeft = '└';
     public const char BorderCornerBottomRight = '┘';
     public const char BodyChar = '█';
+    public const char SelectedBodyChar = '▓';
     public const char EmptyChar = ' ';
 
     public void Render(
@@ -48,7 +49,7 @@ public sealed class BoardRenderer
         }
         foreach (var entry in overlay)
         {
-            WriteCell(buffer, viewport, entry.Key, BodyChar, entry.Value, background: null);
+            WriteCell(buffer, viewport, entry.Key, BodyChar, entry.Value, reverse: false);
         }
     }
 
@@ -79,23 +80,47 @@ public sealed class BoardRenderer
 
     private static void DrawSnake(FrameBuffer buffer, Snake snake, Viewport viewport, bool isSelected)
     {
-        var backgroundWhenSelected = isSelected ? (SnakeColor?)snake.Color : null;
         for (var i = 0; i < snake.Segments.Length; i++)
         {
             var segment = snake.Segments[i];
-            var ch = i == 0 ? HeadChar(snake.Direction) : BodyChar;
-            WriteCell(buffer, viewport, segment, ch, snake.Color, backgroundWhenSelected);
+            var isHead = i == 0;
+            var ch = ChooseSegmentChar(snake.Direction, isHead, isSelected);
+            // Layer three orthogonal cues for the selection so at least one
+            // still reads even on terminals that ignore reverse video:
+            //   1) Head switches to an outlined arrow (shape).
+            //   2) Body switches from full to shaded block (texture).
+            //   3) Head gets reverse video on top (color swap).
+            var reverse = isHead && isSelected;
+            WriteCell(buffer, viewport, segment, ch, snake.Color, reverse);
         }
     }
 
-    private static char HeadChar(Direction direction) => direction switch
+    private static char ChooseSegmentChar(Direction direction, bool isHead, bool isSelected)
     {
-        Direction.Up => '▲',
-        Direction.Down => '▼',
-        Direction.Left => '◀',
-        Direction.Right => '▶',
-        _ => throw new ArgumentOutOfRangeException(nameof(direction), direction, "Unknown direction"),
-    };
+        if (isHead)
+        {
+            return HeadChar(direction, isSelected);
+        }
+        return isSelected ? SelectedBodyChar : BodyChar;
+    }
+
+    private static readonly IReadOnlyDictionary<Direction, (char Filled, char Outlined)> HeadCharByDirection =
+        new Dictionary<Direction, (char, char)>
+        {
+            [Direction.Up] = ('▲', '△'),
+            [Direction.Down] = ('▼', '▽'),
+            [Direction.Left] = ('◀', '◁'),
+            [Direction.Right] = ('▶', '▷'),
+        };
+
+    private static char HeadChar(Direction direction, bool isSelected)
+    {
+        if (!HeadCharByDirection.TryGetValue(direction, out var chars))
+        {
+            throw new ArgumentOutOfRangeException(nameof(direction), direction, "Unknown direction");
+        }
+        return isSelected ? chars.Outlined : chars.Filled;
+    }
 
     private static void WriteCell(
         FrameBuffer buffer,
@@ -103,13 +128,13 @@ public sealed class BoardRenderer
         Cell segment,
         char ch,
         SnakeColor foreground,
-        SnakeColor? background)
+        bool reverse)
     {
         var baseX = viewport.BoardOriginX + segment.X * ViewportCalculator.CellCharWidth;
         var baseY = viewport.BoardOriginY + segment.Y * ViewportCalculator.CellCharHeight;
         for (var dx = 0; dx < ViewportCalculator.CellCharWidth; dx++)
         {
-            buffer.Set(baseX + dx, baseY, ch, foreground, background);
+            buffer.Set(baseX + dx, baseY, ch, foreground, background: null, reverse: reverse);
         }
     }
 }

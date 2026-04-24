@@ -18,10 +18,11 @@ public static class Theme
         _ => throw new ArgumentOutOfRangeException(nameof(color), color, "Unknown snake color"),
     };
 
-    public static Style BuildStyle(SnakeColor? foreground, SnakeColor? background)
+    public static Style BuildStyle(SnakeColor? foreground, SnakeColor? background, bool reverse = false)
     {
         var fg = foreground is null ? Color.Default : ToSpectre(foreground.Value);
         var bg = background is null ? Color.Default : ToSpectre(background.Value);
-        return new Style(foreground: fg, background: bg);
+        var decoration = reverse ? Decoration.Invert : Decoration.None;
+        return new Style(foreground: fg, background: bg, decoration: decoration);
     }
 }
