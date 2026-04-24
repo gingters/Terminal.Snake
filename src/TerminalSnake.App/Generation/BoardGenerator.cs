@@ -21,18 +21,7 @@ public sealed class BoardGenerator
     public const int MaxSnakesPerBoard = 48;
     private const int ColorCount = 8;
 
-    // Long-snake profiles make random-walk placement harder; allow more
-    // placement retries before failing a whole board attempt.
-    private const int SnakePlacementAttempts = 120;
     private const int AbsoluteMinSnakeLength = 3;
-
-    private static readonly Direction[] AllDirections =
-    {
-        Direction.Up,
-        Direction.Down,
-        Direction.Left,
-        Direction.Right,
-    };
 
     private readonly int _solvableAttempts;
 
@@ -103,7 +92,15 @@ public sealed class BoardGenerator
 
     private static Board? TryBuildAcceptableBoard(Random random, DifficultyProfile profile, bool requireChallenge)
     {
-        var board = TryBuildBoard(random, profile);
+        // Constructive placement — snakes go down in reverse release
+        // order with each snake's forward ray forced clear of the
+        // already-placed bodies, so solvability is guaranteed by
+        // construction (#38). If the per-snake attempt budget runs
+        // out, return null and let the outer retry loop pick a new
+        // seed; there's no accept/reject solvability check to run
+        // afterwards because construction *is* the check.
+        var board = ConstructiveBoardBuilder.TryBuild(
+            random, profile.Size, profile.SnakeCount, profile.MinSnakeLength, profile.MaxSnakeLength);
         if (board is null)
         {
             return null;
@@ -112,12 +109,7 @@ public sealed class BoardGenerator
         {
             return null;
         }
-        // Solvability check: greedy first, then partial-move, then a
-        // time-budgeted BFS for the last holdouts. Partial-move lets
-        // the generator ship dense boards that require the player to
-        // move snake A a few cells so snake B can pass through — the
-        // whole point of issue #38.
-        return Solver.TrySolve(board) is null ? null : board;
+        return board;
     }
 
     /// <summary>
@@ -176,170 +168,6 @@ public sealed class BoardGenerator
         }
     }
 
-    private static Board? TryBuildBoard(Random random, DifficultyProfile profile)
-    {
-        var occupied = new HashSet<Cell>();
-        var snakes = new List<Snake>(profile.SnakeCount);
-        // Every snake is a "starter" — head biased toward its exit
-        // border — but the starter zone is wider than the 4-cell strip
-        // the first pass used: heads now sit within ~a third of the
-        // inner side of the border, so the forward ray typically has
-        // to cross several other snakes' bodies before reaching the
-        // edge. That's the ordering challenge (#36 image review:
-        // "9 of 11 snakes at the edges facing outwards — trivial").
-        var starters = profile.SnakeCount;
-        for (var i = 0; i < profile.SnakeCount; i++)
-        {
-            var isStarter = i < starters;
-            var snake = TryPlaceSnake(random, profile, occupied, (SnakeColor)(i % ColorCount), isStarter);
-            if (snake is null)
-            {
-                return null;
-            }
-            foreach (var cell in snake.Segments)
-            {
-                occupied.Add(cell);
-            }
-            snakes.Add(snake);
-        }
-        return new Board(profile.Size, snakes);
-    }
-
-    private static Snake? TryPlaceSnake(
-        Random random, DifficultyProfile profile, HashSet<Cell> occupied, SnakeColor color, bool biasHeadToBorder)
-    {
-        for (var attempt = 0; attempt < SnakePlacementAttempts; attempt++)
-        {
-            var seed = PickSeedPair(random, profile.Size, occupied, biasHeadToBorder);
-            if (seed is null)
-            {
-                continue;
-            }
-            var (head, second) = seed.Value;
-            var targetLength = random.Next(profile.MinSnakeLength, profile.MaxSnakeLength + 1);
-            var segments = GrowSnake(random, profile.Size, occupied, head, second, targetLength);
-            // Reject snakes that couldn't reach the profile's minimum length —
-            // accepting a 3-segment snake when the target was 10 would quietly
-            // regress the "snakes must be longer" ask behind issue #13.
-            if (segments.Count >= profile.MinSnakeLength)
-            {
-                return new Snake(segments, color);
-            }
-        }
-        return null;
-    }
-
-    private static (Cell Head, Cell Second)? PickSeedPair(
-        Random random, int size, HashSet<Cell> occupied, bool biasHeadToBorder)
-    {
-        var innerMax = size - 2;
-        if (innerMax < 1)
-        {
-            return null;
-        }
-        var direction = AllDirections[random.Next(AllDirections.Length)];
-        var head = biasHeadToBorder
-            ? PickHeadNearExitBorder(random, size, direction)
-            : PickHeadAnywhere(random, size);
-        if (occupied.Contains(head))
-        {
-            return null;
-        }
-        var second = head + direction.Opposite().Delta();
-        if (!IsInnerCell(second, size) || occupied.Contains(second))
-        {
-            return null;
-        }
-        return (head, second);
-    }
-
-    private static Cell PickHeadAnywhere(Random random, int size)
-    {
-        // Unbiased head placement — forward ray will often cross other
-        // snakes. These "middle" snakes make the ordering puzzle hard.
-        var innerMax = size - 2;
-        return new Cell(1 + random.Next(innerMax), 1 + random.Next(innerMax));
-    }
-
-    private static Cell PickHeadNearExitBorder(Random random, int size, Direction direction)
-    {
-        // Starter snakes sit within the "exit-side quarter" of the
-        // inner region — far enough from the border that the forward
-        // ray typically crosses one or two other snakes' bodies (which
-        // is the ordering-puzzle challenge), but close enough that the
-        // pure-greedy solver reliably finds a release order before
-        // the generator exhausts its seed budget.
-        var innerMax = size - 2;
-        var band = Math.Max(3, innerMax / 4);
-        var front = 1 + innerMax - band + random.Next(band);
-        var back = 1 + random.Next(innerMax);
-        return direction switch
-        {
-            Direction.Right => new Cell(front, back),
-            Direction.Left => new Cell(size - 1 - front, back),
-            Direction.Down => new Cell(back, front),
-            Direction.Up => new Cell(back, size - 1 - front),
-            _ => new Cell(back, back),
-        };
-    }
-
-    private static bool IsInnerCell(Cell cell, int size) =>
-        cell.X >= 1 && cell.X <= size - 2 && cell.Y >= 1 && cell.Y <= size - 2;
-
-    private static List<Cell> GrowSnake(
-        Random random, int size, HashSet<Cell> occupied, Cell head, Cell second, int targetLength)
-    {
-        var segments = new List<Cell> { head, second };
-        var local = new HashSet<Cell> { head, second };
-        while (segments.Count < targetLength)
-        {
-            var nextCell = PickNextSegment(random, size, occupied, local, segments[^1], segments[^2]);
-            if (nextCell is null)
-            {
-                break;
-            }
-            segments.Add(nextCell.Value);
-            local.Add(nextCell.Value);
-        }
-        return segments;
-    }
-
-    private static Cell? PickNextSegment(
-        Random random, int size, HashSet<Cell> occupied, HashSet<Cell> local, Cell tail, Cell prev)
-    {
-        var candidates = CollectGrowthCandidates(size, occupied, local, tail, prev);
-        return candidates.Count == 0 ? null : candidates[random.Next(candidates.Count)];
-    }
-
-    private static List<Cell> CollectGrowthCandidates(
-        int size, HashSet<Cell> occupied, HashSet<Cell> local, Cell tail, Cell prev)
-    {
-        var candidates = new List<Cell>(AllDirections.Length);
-        foreach (var direction in AllDirections)
-        {
-            var candidate = tail + direction.Delta();
-            if (IsValidGrowthStep(candidate, prev, size, occupied, local))
-            {
-                candidates.Add(candidate);
-            }
-        }
-        return candidates;
-    }
-
-    private static bool IsValidGrowthStep(
-        Cell candidate, Cell prev, int size, HashSet<Cell> occupied, HashSet<Cell> local)
-    {
-        if (candidate == prev)
-        {
-            return false;
-        }
-        if (!IsInnerCell(candidate, size))
-        {
-            return false;
-        }
-        return !occupied.Contains(candidate) && !local.Contains(candidate);
-    }
-
     private static Board FallbackBoard(DifficultyProfile profile)
     {
         // Minimal safe board: place parallel snakes one per row inside the
@@ -367,22 +195,18 @@ public sealed class BoardGenerator
         {
             var inner = Math.Max(1, boardSize - 2);
             var snakeCount = ComputeSnakeCount(levelIndex, inner);
-            // Issue #38 first pass: partial-move solver untangles denser
-            // boards than greedy-only could, but reliability still falls
-            // off a cliff past ~35-40 % coverage within the per-solve
-            // time budget. minLen / maxLen sized for a steady ~35 %
-            // density target.
+            // Constructive placement can carry real density — issue #38.
+            // Target ~60 % coverage: each snake takes a solid chunk of
+            // the inner side. minLen keeps snakes from ending up stubby,
+            // maxLen uses a per-snake budget off the 60 % target.
             var minLen = Math.Clamp(
-                AbsoluteMinSnakeLength + levelIndex / 3,
-                Math.Max(AbsoluteMinSnakeLength, inner / 4),
-                Math.Max(AbsoluteMinSnakeLength, inner / 2));
-            var levelDriven = AbsoluteMinSnakeLength + levelIndex * 2;
-            var sizeFloor = inner;
+                AbsoluteMinSnakeLength + levelIndex / 2,
+                Math.Max(AbsoluteMinSnakeLength, inner / 3),
+                Math.Max(AbsoluteMinSnakeLength, (inner * 2) / 3));
+            var levelDriven = AbsoluteMinSnakeLength + levelIndex * 3;
+            var sizeFloor = (inner * 3) / 2;
             var rawMax = Math.Max(levelDriven, sizeFloor);
-            // Cap per-snake length off the target coverage so the
-            // random-walk placement + partial-move solver can still
-            // find feasible, solvable boards.
-            var perSnakeBudget = Math.Max(minLen + 1, (inner * inner * 2) / (5 * Math.Max(1, snakeCount)));
+            var perSnakeBudget = Math.Max(minLen + 1, (inner * inner * 3) / (5 * Math.Max(1, snakeCount)));
             var maxLen = Math.Clamp(
                 Math.Min(rawMax, perSnakeBudget),
                 AbsoluteMinSnakeLength + 1,
@@ -392,12 +216,12 @@ public sealed class BoardGenerator
 
         private static int ComputeSnakeCount(int levelIndex, int inner)
         {
-            // Issue #38 first pass: stay at inner/3 while we iterate on
-            // the partial-move solver's speed — higher counts time out
-            // every attempt in the solver's per-call budget, which
-            // gives us a fallback board even with the async prefetch.
+            // Constructive placement supports denser boards than
+            // random-walk + accept/reject ever could. Push count to
+            // ~⅔ × inner for mid+ levels — on a 50-wide board that's
+            // ~32 snakes of ~40 cells, pressing past 60 % coverage.
             var levelDriven = 3 + levelIndex / 3;
-            var sizeFloor = inner / 3;
+            var sizeFloor = (inner * 2) / 3;
             var sizeCap = Math.Max(8, sizeFloor);
             return Math.Clamp(
                 Math.Max(levelDriven, sizeFloor),

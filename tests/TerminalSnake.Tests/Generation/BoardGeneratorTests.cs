@@ -100,10 +100,15 @@ public sealed class BoardGeneratorTests
     }
 
     [Fact]
-    public void Snake_colors_are_unique_per_board()
+    public void Snake_colors_are_unique_on_tutorial_sized_boards()
     {
+        // Below 8 snakes every colour is distinct — past that #36 / #38
+        // allow colour cycling since the SnakeColor palette is only
+        // eight entries and the denser mid/late boards need more
+        // snakes than that.
         var generator = new BoardGenerator();
-        var board = generator.Generate(10, seed: 99);
+        var board = generator.Generate(2, seed: 99);
+        Assert.True(board.Snakes.Length <= 8);
         var colors = board.Snakes.Select(s => s.Color).ToArray();
         Assert.Equal(colors.Length, colors.Distinct().Count());
     }
