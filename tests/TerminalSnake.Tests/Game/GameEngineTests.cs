@@ -196,4 +196,70 @@ public sealed class GameEngineTests
             _ = engine.Render(viewport, TimeSpan.FromMilliseconds(ms));
         }
     }
+
+    [Fact]
+    public void BuildViewport_uses_the_engines_current_board_size()
+    {
+        var engine = CreateEngine();
+        var viewport = engine.BuildViewport(200, 80);
+        Assert.Equal(engine.Board.Size, viewport.BoardSide);
+    }
+
+    [Fact]
+    public void BuildViewport_tracks_new_board_size_after_a_level_up()
+    {
+        // Level 2 generates a 6x6 board, level 3 jumps to 7x7. Drain level 2
+        // and confirm BuildViewport reports the new, larger board — the crash
+        // in issue #7 happened because a cached viewport still claimed 6.
+        var engine = CreateEngine(startLevel: 2, animationStep: TimeSpan.FromMilliseconds(1));
+        var beforeSize = engine.Board.Size;
+        Assert.Equal(beforeSize, engine.BuildViewport(200, 80).BoardSide);
+
+        DrainCurrentLevel(engine);
+
+        Assert.Equal(3, engine.LevelIndex);
+        var afterSize = engine.Board.Size;
+        Assert.NotEqual(beforeSize, afterSize);
+        Assert.Equal(afterSize, engine.BuildViewport(200, 80).BoardSide);
+    }
+
+    [Fact]
+    public void Render_does_not_throw_across_a_level_transition()
+    {
+        // Regression for issue #7: BoardRenderer rejects mismatched viewport
+        // and board sizes. The fix is to rebuild the viewport every render
+        // via BuildViewport so it always tracks the engine's current board.
+        var engine = CreateEngine(startLevel: 2, animationStep: TimeSpan.FromMilliseconds(1));
+        DrainCurrentLevel(engine);
+        var viewport = engine.BuildViewport(200, 80);
+        _ = engine.Render(viewport, TimeSpan.FromSeconds(1));
+    }
+
+    private static void DrainCurrentLevel(GameEngine engine)
+    {
+        // Stop as soon as Tick advances to the next level. Without this guard
+        // the loop runs forever because the engine auto-populates the new
+        // level's board during the same tick the previous one drained.
+        var startLevel = engine.LevelIndex;
+        var clock = TimeSpan.Zero;
+        while (engine.LevelIndex == startLevel)
+        {
+            if (engine.Board.Snakes.Length == 0)
+            {
+                clock = clock.Add(TimeSpan.FromMilliseconds(2));
+                engine.Tick(clock);
+                continue;
+            }
+            var solution = Solver.TrySolve(engine.Board);
+            Assert.NotNull(solution);
+            Assert.NotEmpty(solution);
+            var snake = engine.Board.Snakes[solution[0]];
+            engine.HandleBoardClick(snake.Head.X, snake.Head.Y, clock);
+            while (engine.IsAnimating)
+            {
+                clock = clock.Add(TimeSpan.FromMilliseconds(2));
+                engine.Tick(clock);
+            }
+        }
+    }
 }

@@ -31,16 +31,16 @@ internal static class Program
     private static int Run()
     {
         var engine = new GameEngine();
-        var viewport = ViewportCalculator.Compute(
-            Math.Max(Console.WindowWidth, ViewportCalculator.MinimumWidth),
-            Math.Max(Console.WindowHeight, ViewportCalculator.MinimumHeight),
-            engine.Board.Size);
+        // Probe once up-front so we fail fast if the terminal is too small
+        // for the starting board; the live loop rebuilds the viewport on
+        // every tick so later level transitions pick up a new board size.
+        _ = engine.BuildViewport(Console.WindowWidth, Console.WindowHeight);
 
         using var terminalMode = new TerminalMode();
         terminalMode.Enable(Console.Out);
         try
         {
-            RunLoop(engine, viewport);
+            RunLoop(engine);
         }
         finally
         {
@@ -49,7 +49,7 @@ internal static class Program
         return 0;
     }
 
-    private static void RunLoop(GameEngine engine, Viewport viewport)
+    private static void RunLoop(GameEngine engine)
     {
         using var cts = new CancellationTokenSource();
         Console.CancelKeyPress += (_, e) =>
@@ -61,6 +61,7 @@ internal static class Program
         var events = Channel.CreateUnbounded<InputEvent>();
         var reader = Task.Run(() => PumpStdin(events.Writer, cts.Token));
         var stopwatch = Stopwatch.StartNew();
+        var viewport = engine.BuildViewport(Console.WindowWidth, Console.WindowHeight);
         var initialBuffer = engine.Render(viewport, stopwatch.Elapsed);
         var view = new BoardView(initialBuffer);
 
@@ -70,9 +71,17 @@ internal static class Program
             {
                 while (!cts.IsCancellationRequested)
                 {
-                    DrainEvents(events.Reader, engine, viewport, stopwatch.Elapsed, cts);
+                    // Input translation (click → board cell) needs the viewport
+                    // matching what the player currently sees, i.e. the board
+                    // BEFORE Tick. Render needs the viewport matching the
+                    // board AFTER Tick, which may have transitioned to the
+                    // next level (different Board.Size). Build a fresh
+                    // viewport for each phase.
+                    var inputViewport = engine.BuildViewport(Console.WindowWidth, Console.WindowHeight);
+                    DrainEvents(events.Reader, engine, inputViewport, stopwatch.Elapsed, cts);
                     engine.Tick(stopwatch.Elapsed);
-                    view.Update(engine.Render(viewport, stopwatch.Elapsed));
+                    var renderViewport = engine.BuildViewport(Console.WindowWidth, Console.WindowHeight);
+                    view.Update(engine.Render(renderViewport, stopwatch.Elapsed));
                     ctx.Refresh();
                     Thread.Sleep(16);
                 }
