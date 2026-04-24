@@ -81,10 +81,25 @@ public sealed class BoardGenerator
     // field like the first #36 iteration did.
     private static int DetermineBoardSize(int levelIndex, int maxBoardSide)
     {
-        var desired = MinBoardSize + Math.Max(0, levelIndex - 1);
         var cap = Math.Max(MinBoardSize, Math.Min(AbsoluteMaxBoardSize, maxBoardSide));
-        return Math.Clamp(desired, MinBoardSize, cap);
+        if (levelIndex >= FullBoardLevel)
+        {
+            return cap;
+        }
+        // Tutorial ramp: level 1 → MinBoardSize, level FullBoardLevel →
+        // full terminal. Linear so the grid visibly grows every level
+        // in the first few puzzles instead of staying cramped in the
+        // middle of a huge terminal (#36 image review: level 8 was
+        // half-empty on a 50-wide screen).
+        var tutorialRange = cap - MinBoardSize;
+        var scaled = MinBoardSize + (tutorialRange * (levelIndex - 1)) / (FullBoardLevel - 1);
+        return Math.Clamp(scaled, MinBoardSize, cap);
     }
+
+    // Level at which the board is expected to already fill the entire
+    // terminal. Beyond this point the difficulty ramps via snake count
+    // and length instead of size.
+    private const int FullBoardLevel = 5;
 
     private static Board? TryBuildAcceptableBoard(Random random, DifficultyProfile profile, bool requireChallenge)
     {
@@ -352,27 +367,23 @@ public sealed class BoardGenerator
         {
             var inner = Math.Max(1, boardSize - 2);
             var snakeCount = ComputeSnakeCount(levelIndex, inner);
-            // minLen is deliberately kept short (≤ a third of the inner
-            // side) even on huge boards so individual snakes vary in
-            // length — the old "every snake is exactly inner cells" layout
-            // looked unnaturally uniform, and uniform snakes exit in the
-            // same number of steps which makes the ordering puzzle bland.
+            // Push every snake to a solid chunk of the inner side, so
+            // even low-level puzzles on the full-terminal board don't
+            // look empty. Cap maxLen by the per-snake budget so the
+            // random walk + greedy solver can still fit everything.
             var minLen = Math.Clamp(
-                AbsoluteMinSnakeLength + levelIndex / 4,
-                AbsoluteMinSnakeLength,
-                Math.Max(AbsoluteMinSnakeLength, inner / 3));
-            // Max length grows faster than the per-level delta — at
-            // mid levels (≈25) we want some snakes that genuinely span
-            // a good chunk of the board, not a handful of ~20-cell
-            // worms (#36 image review).
-            var legacyMax = AbsoluteMinSnakeLength + levelIndex * 2;
-            // Cap snake length at ~inner so the random-walk placement
-            // doesn't get stuck chasing its tail: total coverage stays
-            // around 30 % (snakeCount × maxLen ÷ inner²), which the
-            // generator can reliably satisfy.
-            var sizeCap = Math.Max(minLen + 1, inner);
+                AbsoluteMinSnakeLength + levelIndex / 3,
+                Math.Max(AbsoluteMinSnakeLength, inner / 4),
+                Math.Max(AbsoluteMinSnakeLength, inner / 2));
+            var levelDriven = AbsoluteMinSnakeLength + levelIndex * 2;
+            var sizeFloor = inner;
+            var rawMax = Math.Max(levelDriven, sizeFloor);
+            // Per-snake cell budget to keep coverage around ~40% — the
+            // placement sweet spot where dense random-walk snakes
+            // almost always fit but the board still feels full.
+            var perSnakeBudget = Math.Max(minLen + 1, (inner * inner * 2) / (5 * Math.Max(1, snakeCount)));
             var maxLen = Math.Clamp(
-                Math.Min(legacyMax, sizeCap),
+                Math.Min(rawMax, perSnakeBudget),
                 AbsoluteMinSnakeLength + 1,
                 MaxSegmentLength);
             return new DifficultyProfile(boardSize, snakeCount, minLen, maxLen);
@@ -380,19 +391,13 @@ public sealed class BoardGenerator
 
         private static int ComputeSnakeCount(int levelIndex, int inner)
         {
-            // Legacy tutorial pacing for small boards (8 snakes at level
-            // 15 on a 16-grid). On bigger boards the count scales with
-            // ~0.4 snakes per inner cell along the side — tuned so the
-            // 50x50 level-512 / 999 boards carry ~19 snakes of ~30 cells
-            // each (≈30 % coverage) without the random-walk placement
-            // falling off a cliff (#36 image reviews).
+            // Snake count scales with the inner side: ~inner/3 gives
+            // decent density without starving the random-walk placement
+            // of free cells. On a 50-wide board that's 16 snakes; with
+            // maxLen up to inner they approach ~45 % coverage. Higher
+            // counts run into solver fallbacks (#36 image review).
             var levelDriven = 3 + levelIndex / 3;
-            // Cap growth once the board gets above ~50 cells — past
-            // that, random-walk placement struggles to fit enough long
-            // snakes to still leave the solver a way through. 20 snakes
-            // on a 60-wide board is already ~25 % density, which the
-            // partial-move solver can untangle reliably.
-            var sizeFloor = Math.Min(20, (inner * 2) / 5);
+            var sizeFloor = inner / 3;
             var sizeCap = Math.Max(8, sizeFloor);
             return Math.Clamp(
                 Math.Max(levelDriven, sizeFloor),
