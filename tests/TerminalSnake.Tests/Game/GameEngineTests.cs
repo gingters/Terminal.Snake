@@ -172,4 +172,28 @@ public sealed class GameEngineTests
         Assert.Equal(viewport.TerminalWidth, buffer.Width);
         Assert.Equal(viewport.TerminalHeight, buffer.Height);
     }
+
+    [Fact]
+    public void Render_does_not_throw_during_exit_animation_when_snake_shrinks_below_two_segments()
+    {
+        // Drives a snake through its full exit animation and asks for a
+        // render on every tick. Before the fix, the Snake constructor threw
+        // ArgumentException once the animation snapshot reached one or zero
+        // segments because Snake demands a minimum of two segments to infer
+        // its direction. See GitHub issue #3 for the original stack trace.
+        var engine = CreateEngine(animationStep: TimeSpan.FromMilliseconds(5));
+        var viewport = ViewportCalculator.Compute(
+            ViewportCalculator.MinimumWidth + 8,
+            ViewportCalculator.MinimumHeight + 8,
+            engine.Board.Size);
+
+        engine.HandleKey(new KeyEvent(ConsoleKey.Tab), TimeSpan.Zero);
+        engine.HandleKey(new KeyEvent(ConsoleKey.Enter), TimeSpan.Zero);
+
+        for (var ms = 0; ms <= 1_500; ms += 2)
+        {
+            engine.Tick(TimeSpan.FromMilliseconds(ms));
+            _ = engine.Render(viewport, TimeSpan.FromMilliseconds(ms));
+        }
+    }
 }
