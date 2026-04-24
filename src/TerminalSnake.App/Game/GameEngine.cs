@@ -16,6 +16,7 @@ public sealed class GameEngine
     private static readonly TimeSpan DefaultDemoArmDelay = TimeSpan.FromSeconds(1);
 
     private readonly LevelManager _levels;
+    private readonly LevelPrefetcher _prefetcher;
     private readonly AnimationScheduler _animation;
     private readonly IdleWatcher _idle;
     private readonly BoardRenderer _renderer;
@@ -45,7 +46,8 @@ public sealed class GameEngine
         TimeSpan? demoMovePause = null,
         TimeSpan? demoArmDelay = null,
         int startLevel = 1,
-        int maxBoardSide = BoardGenerator.MaxBoardSize)
+        int maxBoardSide = BoardGenerator.MaxBoardSize,
+        LevelPrefetcher? prefetcher = null)
     {
         _levels = Or(levels, DefaultLevels);
         _idle = Or(idleWatcher, DefaultIdle);
@@ -56,8 +58,15 @@ public sealed class GameEngine
         _demoMovePause = demoMovePause ?? DefaultDemoMovePause;
         _demoArmDelay = demoArmDelay ?? DefaultDemoArmDelay;
         _maxBoardSide = maxBoardSide;
+        _prefetcher = prefetcher ?? new LevelPrefetcher(_levels.LoadLevel);
         LevelIndex = startLevel;
+        // Startup: the very first level has to be built synchronously —
+        // no prior playthrough to hide generation behind. Every
+        // subsequent level is prefetched as soon as the current one
+        // loads, so by the time the player finishes the board below
+        // the next one is usually already waiting.
         _currentBoard = _levels.LoadLevel(startLevel, _maxBoardSide);
+        _prefetcher.PreparationRequested(startLevel + 1, _maxBoardSide);
     }
 
     private static T Or<T>(T? value, Func<T> fallback) where T : class
@@ -386,11 +395,24 @@ public sealed class GameEngine
     private void JumpToLevel(int levelIndex)
     {
         LevelIndex = levelIndex;
-        _currentBoard = _levels.LoadLevel(levelIndex, _maxBoardSide);
+        _currentBoard = LoadLevelBoard(levelIndex);
         _pendingBoardAfterAnimation = null;
         _animation.Clear();
         _demoQueue.Clear();
         SelectedSnakeIndex = null;
+    }
+
+    private Board LoadLevelBoard(int levelIndex)
+    {
+        var board = _prefetcher.IsReady(levelIndex, _maxBoardSide)
+            ? _prefetcher.Take(levelIndex, _maxBoardSide)
+            : _levels.LoadLevel(levelIndex, _maxBoardSide);
+        // Kick off generation of the next level as soon as the current
+        // one is in the player's hands. Issue #38: dense boards can
+        // cost seconds to verify, so we need that work running while
+        // the player is still untangling the board below.
+        _prefetcher.PreparationRequested(levelIndex + 1, _maxBoardSide);
+        return board;
     }
 
     private static Direction? TryMapArrowToDirection(ConsoleKey key) => key switch
@@ -505,6 +527,8 @@ public sealed class GameEngine
 
     private void RestartLevel()
     {
+        // Restart reloads the same seed, so it hits the generator
+        // directly — the prefetcher only has the *next* level queued.
         _currentBoard = _levels.LoadLevel(LevelIndex, _maxBoardSide);
         _pendingBoardAfterAnimation = null;
         _animation.Clear();
@@ -515,7 +539,7 @@ public sealed class GameEngine
     private void AdvanceToNextLevel()
     {
         LevelIndex += 1;
-        _currentBoard = _levels.LoadLevel(LevelIndex, _maxBoardSide);
+        _currentBoard = LoadLevelBoard(LevelIndex);
         SelectedSnakeIndex = null;
         _demoQueue.Clear();
 
