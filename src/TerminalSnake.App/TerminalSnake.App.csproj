@@ -4,6 +4,8 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>TerminalSnake</RootNamespace>
     <AssemblyName>TerminalSnake.App</AssemblyName>
+    <!-- termios P/Invoke wrapper uses a fixed-size c_cc buffer. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
