@@ -82,4 +82,23 @@ internal static class PosixTerminal
         }
         _hasSaved = false;
     }
+
+    /// <summary>
+    /// Opens a FileStream over the controlling terminal, bypassing
+    /// <see cref="Console.OpenStandardInput"/>. On Unix, .NET wraps stdin
+    /// in a managed line-editing reader whenever the input is a tty — that
+    /// reader aggregates keystrokes until a newline no matter what the tty
+    /// is configured to. Reading <c>/dev/tty</c> directly goes straight
+    /// through the libc <c>read()</c> syscall and respects the termios
+    /// state set via <see cref="EnterRawMode"/>.
+    /// </summary>
+    public static Stream OpenTtyReadStream()
+    {
+        return new FileStream(
+            "/dev/tty",
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite,
+            bufferSize: 1);
+    }
 }
