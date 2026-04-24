@@ -17,4 +17,19 @@
     <CoverletOutputFormat>cobertura</CoverletOutputFormat>
   </PropertyGroup>
 
+  <PropertyGroup Label="Versioning">
+    <!-- release-please rewrites the version literal below on every
+         release PR so local and CI builds stamp the correct version
+         into the assembly metadata. The release workflow also passes
+         -p:Version=... explicitly, which overrides whatever is here
+         and guarantees the published AoT binary carries the release
+         version. -->
+    <!-- x-release-please-start-version -->
+    <Version>0.0.0</Version>
+    <!-- x-release-please-end -->
+    <AssemblyVersion>$(Version)</AssemblyVersion>
+    <FileVersion>$(Version)</FileVersion>
+    <InformationalVersion>$(Version)</InformationalVersion>
+  </PropertyGroup>
+
 </Project>
