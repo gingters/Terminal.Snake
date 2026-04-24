@@ -49,7 +49,7 @@ public sealed class HudRenderer
         // "Press H for help" carries the remaining three.
         var strings = model.Strings;
         var selectionReleaseLine = $"{strings.HelpTab}   {strings.HelpEnter}";
-        var utilityLine = $"{strings.HelpR}   {strings.HelpH}   {strings.HelpQ}";
+        var utilityLine = $"{strings.HelpR}   {strings.HelpH}   {strings.HelpD}   {strings.HelpQ}";
         WriteText(buffer, x: 1, y: viewport.TopHudRow + 1, selectionReleaseLine);
         WriteText(buffer, x: 1, y: viewport.BottomHudRow - 1, utilityLine);
     }

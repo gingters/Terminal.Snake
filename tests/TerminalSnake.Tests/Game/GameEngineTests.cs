@@ -70,9 +70,12 @@ public sealed class GameEngineTests
     [Fact]
     public void Demo_mode_makes_the_help_overlay_visible_again()
     {
+        // Tab hides help and (per #16) disables auto-play; press D to re-arm
+        // auto-play before letting the idle timer run out.
         var engine = CreateEngine(idleThreshold: TimeSpan.FromMilliseconds(100));
         engine.HandleKey(new KeyEvent(ConsoleKey.Tab), TimeSpan.Zero);
         Assert.False(engine.HelpVisible);
+        engine.HandleKey(new KeyEvent(ConsoleKey.D), TimeSpan.FromMilliseconds(10));
 
         engine.Tick(TimeSpan.FromMilliseconds(500));
         Assert.Equal(GameMode.Demo, engine.Mode);

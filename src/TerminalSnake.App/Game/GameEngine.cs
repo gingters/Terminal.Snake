@@ -72,6 +72,12 @@ public sealed class GameEngine
     // flips it off; H toggles it at will. See issue #15.
     public bool HelpVisible { get; private set; } = true;
 
+    // Starts true so auto-play kicks in after the idle threshold on a fresh
+    // game. The first gameplay input turns it off permanently (until the
+    // player presses D to re-arm it), so stepping away for a coffee on
+    // level 4 does not cause level 5 to start playing itself. See issue #16.
+    public bool AutoPlayEnabled { get; private set; } = true;
+
     public void HandleKey(KeyEvent key, TimeSpan now)
     {
         ArgumentNullException.ThrowIfNull(key);
@@ -87,6 +93,7 @@ public sealed class GameEngine
     {
         NoteInputActivity(now);
         HelpVisible = false;
+        AutoPlayEnabled = false;
         if (_animation.IsBusy)
         {
             return;
@@ -137,7 +144,7 @@ public sealed class GameEngine
 
     private void TickDemoModeTransition(TimeSpan now)
     {
-        if (Mode == GameMode.Player && _idle.HasIdledOut(now))
+        if (AutoPlayEnabled && Mode == GameMode.Player && _idle.HasIdledOut(now))
         {
             EnterDemoMode();
         }
@@ -177,12 +184,32 @@ public sealed class GameEngine
 
     private void DispatchKey(KeyEvent key, TimeSpan now)
     {
-        if (key.Key == ConsoleKey.H)
+        if (HandleMetaKey(key))
         {
-            HelpVisible = !HelpVisible;
             return;
         }
         HelpVisible = false;
+        AutoPlayEnabled = false;
+        DispatchGameplayKey(key, now);
+    }
+
+    private bool HandleMetaKey(KeyEvent key)
+    {
+        if (key.Key == ConsoleKey.H)
+        {
+            HelpVisible = !HelpVisible;
+            return true;
+        }
+        if (key.Key == ConsoleKey.D)
+        {
+            AutoPlayEnabled = true;
+            return true;
+        }
+        return false;
+    }
+
+    private void DispatchGameplayKey(KeyEvent key, TimeSpan now)
+    {
         if (key.Key == ConsoleKey.Tab)
         {
             CycleSelection(key.Shift ? -1 : +1);
