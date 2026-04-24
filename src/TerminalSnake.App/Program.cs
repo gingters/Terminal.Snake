@@ -143,7 +143,9 @@ internal static class Program
     private static void PumpStdin(ChannelWriter<InputEvent> writer, CancellationToken ct)
     {
         var parser = new BufferedInputParser();
-        var stdin = Console.OpenStandardInput();
+        var stdin = OperatingSystem.IsWindows()
+            ? Console.OpenStandardInput()
+            : PosixTerminal.OpenTtyReadStream();
         var buffer = new byte[128];
         while (!ct.IsCancellationRequested)
         {
