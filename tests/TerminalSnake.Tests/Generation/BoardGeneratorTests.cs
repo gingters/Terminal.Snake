@@ -74,4 +74,29 @@ public sealed class BoardGeneratorTests
         }
     }
 
+    [Fact]
+    public void Mid_level_boards_include_snakes_of_at_least_five_segments()
+    {
+        // Issue #13: from ~level 5 onwards at least one snake on most boards
+        // must be 5+ cells. Scan 10 seeds and require the claim to hold on
+        // at least one of them (generator randomness leaves room for the
+        // occasional all-short board).
+        var generator = new BoardGenerator();
+        var found = Enumerable.Range(0, 10)
+            .Select(seed => generator.Generate(6, seed))
+            .Any(b => b.Snakes.Any(s => s.Segments.Length >= 5));
+        Assert.True(found, "level 6 should be able to produce a 5+ cell snake");
+    }
+
+    [Fact]
+    public void High_level_boards_include_snakes_of_at_least_ten_segments()
+    {
+        // Issue #13: later levels should produce genuinely long snakes.
+        // Scan 10 seeds and require at least one to yield a 10+ cell snake.
+        var generator = new BoardGenerator();
+        var found = Enumerable.Range(0, 10)
+            .Select(seed => generator.Generate(12, seed))
+            .Any(b => b.Snakes.Any(s => s.Segments.Length >= 10));
+        Assert.True(found, "level 12 should be able to produce a 10+ cell snake");
+    }
 }
