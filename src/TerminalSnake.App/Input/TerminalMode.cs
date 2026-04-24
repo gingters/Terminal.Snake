@@ -10,6 +10,9 @@ public static class TerminalEscapeSequences
     public const string DisableMouse = "\x1b[?1006l\x1b[?1000l";
     public const string HideCursor = "\x1b[?25l";
     public const string ShowCursor = "\x1b[?25h";
+    // Clear the visible screen and move the cursor home. Emitted on
+    // shutdown so the board is not left on the terminal after quit (#22).
+    public const string ClearScreen = "\x1b[2J\x1b[H";
 }
 
 // Flips the host tty out of canonical+echo mode so keystrokes reach the app
@@ -37,6 +40,7 @@ public sealed class TerminalMode : IDisposable
         {
             return;
         }
+        output.Write(TerminalEscapeSequences.ClearScreen);
         output.Write(TerminalEscapeSequences.ShowCursor);
         output.Write(TerminalEscapeSequences.DisableMouse);
         output.Flush();
