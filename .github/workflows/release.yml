@@ -1,0 +1,153 @@
+name: Release Artifacts
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  publish-aot:
+    name: AoT Publish (${{ matrix.rid }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+            archive: tar
+            family: linux
+          - os: ubuntu-24.04-arm
+            rid: linux-arm64
+            archive: tar
+            family: linux
+          - os: windows-latest
+            rid: win-x64
+            archive: zip
+            family: windows
+          - os: windows-11-arm
+            rid: win-arm64
+            archive: zip
+            family: windows
+          - os: macos-latest
+            rid: osx-arm64
+            archive: tar
+            family: macos
+    env:
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install Linux AoT prerequisites
+        if: matrix.family == 'linux'
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang \
+            zlib1g-dev \
+            libkrb5-dev
+
+      - name: Install macOS AoT prerequisites
+        if: matrix.family == 'macos'
+        run: |
+          set -euo pipefail
+          brew install openssl@3 brotli
+          OPENSSL_PREFIX="$(brew --prefix openssl@3)"
+          BROTLI_PREFIX="$(brew --prefix brotli)"
+          echo "LIBRARY_PATH=$OPENSSL_PREFIX/lib:$BROTLI_PREFIX/lib:${LIBRARY_PATH:-}" >> "$GITHUB_ENV"
+          echo "OPENSSL_PREFIX=$OPENSSL_PREFIX" >> "$GITHUB_ENV"
+          echo "BROTLI_PREFIX=$BROTLI_PREFIX" >> "$GITHUB_ENV"
+
+      - name: Publish native AoT binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet publish src/TerminalSnake.App/TerminalSnake.App.csproj \
+            -c Release \
+            -r ${{ matrix.rid }} \
+            --self-contained \
+            -p:PublishAot=true \
+            -p:StripSymbols=true \
+            -p:InvariantGlobalization=true \
+            -p:TreatWarningsAsErrors=false \
+            -o publish/${{ matrix.rid }}
+
+      - name: Rewrite macOS dylib paths to relative and bundle dependencies
+        if: matrix.family == 'macos'
+        run: |
+          set -euo pipefail
+          BIN=publish/${{ matrix.rid }}/TerminalSnake.App
+          cp "$OPENSSL_PREFIX/lib/libssl.3.dylib"          publish/${{ matrix.rid }}/
+          cp "$OPENSSL_PREFIX/lib/libcrypto.3.dylib"       publish/${{ matrix.rid }}/
+          cp "$BROTLI_PREFIX/lib/libbrotlienc.1.dylib"     publish/${{ matrix.rid }}/
+          cp "$BROTLI_PREFIX/lib/libbrotlidec.1.dylib"     publish/${{ matrix.rid }}/
+          cp "$BROTLI_PREFIX/lib/libbrotlicommon.1.dylib"  publish/${{ matrix.rid }}/
+          chmod u+w publish/${{ matrix.rid }}/*.dylib
+          install_name_tool -change "$OPENSSL_PREFIX/lib/libssl.3.dylib" @executable_path/libssl.3.dylib "$BIN"
+          install_name_tool -change "$OPENSSL_PREFIX/lib/libcrypto.3.dylib" @executable_path/libcrypto.3.dylib "$BIN"
+          install_name_tool -change "$BROTLI_PREFIX/lib/libbrotlienc.1.dylib" @executable_path/libbrotlienc.1.dylib "$BIN"
+          install_name_tool -change "$BROTLI_PREFIX/lib/libbrotlidec.1.dylib" @executable_path/libbrotlidec.1.dylib "$BIN"
+          install_name_tool -change "$BROTLI_PREFIX/lib/libbrotlicommon.1.dylib" @executable_path/libbrotlicommon.1.dylib "$BIN"
+          # Libssl references libcrypto by absolute path; rewrite to @loader_path.
+          install_name_tool -change "$OPENSSL_PREFIX/lib/libcrypto.3.dylib" @loader_path/libcrypto.3.dylib publish/${{ matrix.rid }}/libssl.3.dylib
+          # Brotli enc/dec reference common; rewrite to @loader_path.
+          install_name_tool -change "$BROTLI_PREFIX/lib/libbrotlicommon.1.dylib" @loader_path/libbrotlicommon.1.dylib publish/${{ matrix.rid }}/libbrotlienc.1.dylib
+          install_name_tool -change "$BROTLI_PREFIX/lib/libbrotlicommon.1.dylib" @loader_path/libbrotlicommon.1.dylib publish/${{ matrix.rid }}/libbrotlidec.1.dylib
+          # Ad-hoc resign after install_name_tool edits.
+          codesign --force --sign - "$BIN"
+          codesign --force --sign - publish/${{ matrix.rid }}/libssl.3.dylib
+          codesign --force --sign - publish/${{ matrix.rid }}/libcrypto.3.dylib
+          codesign --force --sign - publish/${{ matrix.rid }}/libbrotlienc.1.dylib
+          codesign --force --sign - publish/${{ matrix.rid }}/libbrotlidec.1.dylib
+          codesign --force --sign - publish/${{ matrix.rid }}/libbrotlicommon.1.dylib
+
+      - name: Stage release payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          STAGE="stage/${{ matrix.rid }}"
+          mkdir -p "$STAGE"
+          if [[ "${{ matrix.archive }}" == "zip" ]]; then
+            cp "publish/${{ matrix.rid }}/TerminalSnake.App.exe" "$STAGE/terminal-snake.exe"
+          else
+            cp "publish/${{ matrix.rid }}/TerminalSnake.App" "$STAGE/terminal-snake"
+            chmod +x "$STAGE/terminal-snake"
+          fi
+          if [[ "${{ matrix.family }}" == "macos" ]]; then
+            cp publish/${{ matrix.rid }}/*.dylib "$STAGE/"
+          fi
+          cp LICENSE README.md "$STAGE/"
+
+      - name: Create archive (tar.gz)
+        if: matrix.archive == 'tar'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARCHIVE="terminal-snake-${{ github.event.release.tag_name }}-${{ matrix.rid }}.tar.gz"
+          tar -C stage/${{ matrix.rid }} -czf "$ARCHIVE" .
+          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+
+      - name: Create archive (zip)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          $archive = "terminal-snake-${{ github.event.release.tag_name }}-${{ matrix.rid }}.zip"
+          Compress-Archive -Path "stage/${{ matrix.rid }}/*" -DestinationPath $archive
+          "ARCHIVE=$archive" | Out-File -FilePath $Env:GITHUB_ENV -Append
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ARCHIVE }}
+          tag_name: ${{ github.event.release.tag_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
