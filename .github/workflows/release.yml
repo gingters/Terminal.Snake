@@ -3,6 +3,11 @@ name: Release Artifacts
 on:
   release:
     types: [published]
+  # Dry-run the AoT matrix on pushes to feature/release — same steps,
+  # same archives, but without touching an actual GitHub release. Lets
+  # us rehearse the workflow end-to-end before cutting v1.0.0.
+  push:
+    branches: [feature/release]
 
 permissions:
   contents: write
@@ -47,6 +52,28 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          # On a release trigger the tag is authoritative (release-please
+          # updates the manifest and tags it in the same commit). On the
+          # feature/release dry-run we read from the manifest the action
+          # would normally bump — lets us validate the pipeline without
+          # touching the live release.
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            TAG="${{ github.event.release.tag_name }}"
+            VERSION="${TAG#v}"
+            TAG_NAME="$TAG"
+          else
+            VERSION="$(jq -r '."."' .github/.release-please-manifest.json)"
+            TAG_NAME="feature-release-${GITHUB_SHA::7}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
+          echo "Resolved version=$VERSION tag=$TAG_NAME (event=${{ github.event_name }})"
+
       - name: Install Linux AoT prerequisites
         if: matrix.family == 'linux'
         run: |
@@ -80,6 +107,10 @@ jobs:
             -p:StripSymbols=true \
             -p:InvariantGlobalization=true \
             -p:TreatWarningsAsErrors=false \
+            -p:Version=${{ steps.version.outputs.version }} \
+            -p:AssemblyVersion=${{ steps.version.outputs.version }} \
+            -p:FileVersion=${{ steps.version.outputs.version }} \
+            -p:InformationalVersion=${{ steps.version.outputs.version }} \
             -o publish/${{ matrix.rid }}
 
       - name: Rewrite macOS dylib paths to relative and bundle dependencies
@@ -133,7 +164,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ARCHIVE="terminal-snake-${{ github.event.release.tag_name }}-${{ matrix.rid }}.tar.gz"
+          ARCHIVE="terminal-snake-${{ steps.version.outputs.tag_name }}-${{ matrix.rid }}.tar.gz"
           tar -C stage/${{ matrix.rid }} -czf "$ARCHIVE" .
           echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
 
@@ -141,13 +172,22 @@ jobs:
         if: matrix.archive == 'zip'
         shell: pwsh
         run: |
-          $archive = "terminal-snake-${{ github.event.release.tag_name }}-${{ matrix.rid }}.zip"
+          $archive = "terminal-snake-${{ steps.version.outputs.tag_name }}-${{ matrix.rid }}.zip"
           Compress-Archive -Path "stage/${{ matrix.rid }}/*" -DestinationPath $archive
           "ARCHIVE=$archive" | Out-File -FilePath $Env:GITHUB_ENV -Append
 
       - name: Upload release asset
+        if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ env.ARCHIVE }}
-          tag_name: ${{ github.event.release.tag_name }}
+          tag_name: ${{ steps.version.outputs.tag_name }}
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload workflow artifact (dry-run)
+        if: github.event_name != 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: terminal-snake-${{ matrix.rid }}
+          path: ${{ env.ARCHIVE }}
+          if-no-files-found: error

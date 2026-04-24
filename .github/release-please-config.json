@@ -19,7 +19,10 @@
   ],
   "packages": {
     ".": {
-      "package-name": "terminal-snake"
+      "package-name": "terminal-snake",
+      "extra-files": [
+        "Directory.Build.props"
+      ]
     }
   }
 }

@@ -12,7 +12,7 @@ namespace TerminalSnake.Input;
 // Only macOS (Darwin) is implemented; other platforms leave the tty
 // alone and the app falls back to line-buffered input.
 [ExcludeFromCodeCoverage]
-internal static class PosixTerminal
+internal static partial class PosixTerminal
 {
     private const int StdinFileno = 0;
     private const int TcsaNow = 0;
@@ -24,6 +24,13 @@ internal static class PosixTerminal
     private const ulong DarwinIexten = 0x00000400;
     private const int DarwinVmin = 16;
     private const int DarwinVtime = 17;
+
+    // macOS exposes the C library as libSystem.dylib; using the explicit
+    // path keeps the AoT-generated P/Invoke stub from relying on the
+    // runtime's libc → libSystem fallback, which is JIT-only and silently
+    // fails to resolve under Native AoT (root cause of the released binary
+    // staying in canonical mode regardless of EnterRawMode).
+    private const string LibSystem = "/usr/lib/libSystem.dylib";
 
     private static bool _hasSaved;
     private static TermiosDarwin _saved;
@@ -40,11 +47,11 @@ internal static class PosixTerminal
         public ulong c_ospeed;
     }
 
-    [DllImport("libc", SetLastError = true)]
-    private static extern unsafe int tcgetattr(int fd, TermiosDarwin* termios);
+    [LibraryImport(LibSystem, EntryPoint = "tcgetattr", SetLastError = true)]
+    private static unsafe partial int TcGetAttr(int fd, TermiosDarwin* termios);
 
-    [DllImport("libc", SetLastError = true)]
-    private static extern unsafe int tcsetattr(int fd, int actions, TermiosDarwin* termios);
+    [LibraryImport(LibSystem, EntryPoint = "tcsetattr", SetLastError = true)]
+    private static unsafe partial int TcSetAttr(int fd, int actions, TermiosDarwin* termios);
 
     public static bool EnterRawMode()
     {
@@ -55,7 +62,7 @@ internal static class PosixTerminal
         unsafe
         {
             TermiosDarwin current;
-            if (tcgetattr(StdinFileno, &current) != 0)
+            if (TcGetAttr(StdinFileno, &current) != 0)
             {
                 return false;
             }
@@ -65,7 +72,7 @@ internal static class PosixTerminal
             current.c_lflag &= ~(DarwinIcanon | DarwinEcho | DarwinEchonl | DarwinIexten);
             current.c_cc[DarwinVmin] = 1;
             current.c_cc[DarwinVtime] = 0;
-            return tcsetattr(StdinFileno, TcsaNow, &current) == 0;
+            return TcSetAttr(StdinFileno, TcsaNow, &current) == 0;
         }
     }
 
@@ -78,7 +85,7 @@ internal static class PosixTerminal
         unsafe
         {
             var copy = _saved;
-            tcsetattr(StdinFileno, TcsaNow, &copy);
+            TcSetAttr(StdinFileno, TcsaNow, &copy);
         }
         _hasSaved = false;
     }
