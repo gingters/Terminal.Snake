@@ -106,4 +106,22 @@ public sealed class BoardRendererTests
         Assert.Contains("▶", snapshot);
         Assert.Contains("█", snapshot);
     }
+
+    [Fact]
+    public void Overlay_cells_are_painted_as_body_blocks_in_their_color()
+    {
+        var board = SimpleBoard(6, Snake(SnakeColor.Red, (0, 0), (1, 0)));
+        var viewport = ViewportCalculator.Compute(40, 12, 6);
+        var buffer = new FrameBuffer(viewport.TerminalWidth, viewport.TerminalHeight);
+        var overlay = new Dictionary<Cell, SnakeColor>
+        {
+            [new Cell(4, 4)] = SnakeColor.Green,
+        };
+        new BoardRenderer().Render(buffer, board, viewport, overlay: overlay);
+
+        var overlayBaseX = viewport.BoardOriginX + 4 * ViewportCalculator.CellCharWidth;
+        var overlayBaseY = viewport.BoardOriginY + 4 * ViewportCalculator.CellCharHeight;
+        Assert.Equal(BoardRenderer.BodyChar, buffer[overlayBaseX, overlayBaseY].Char);
+        Assert.Equal(SnakeColor.Green, buffer[overlayBaseX, overlayBaseY].Foreground);
+    }
 }

@@ -131,8 +131,8 @@ public sealed class GameEngine
     public FrameBuffer Render(Viewport viewport, TimeSpan now)
     {
         var buffer = new FrameBuffer(viewport.TerminalWidth, viewport.TerminalHeight);
-        var visibleBoard = ApplyAnimationSnapshot(_currentBoard, now);
-        _renderer.Render(buffer, visibleBoard, viewport, SelectedSnakeIndex);
+        var (visibleBoard, overlay) = ApplyAnimationSnapshot(_currentBoard, now);
+        _renderer.Render(buffer, visibleBoard, viewport, SelectedSnakeIndex, overlay);
         return buffer;
     }
 
@@ -268,16 +268,37 @@ public sealed class GameEngine
         _lastDemoMoveAt = now;
     }
 
-    private Board ApplyAnimationSnapshot(Board board, TimeSpan now)
+    private (Board Board, IReadOnlyDictionary<Cell, SnakeColor>? Overlay)
+        ApplyAnimationSnapshot(Board board, TimeSpan now)
     {
         var snapshot = _animation.Current(now);
         if (snapshot is null)
         {
-            return board;
+            return (board, null);
         }
+
         var original = board.Snakes[snapshot.Value.SnakeIndex];
-        var replaced = new Snake(snapshot.Value.Segments, original.Color);
-        var updated = board.Snakes.SetItem(snapshot.Value.SnakeIndex, replaced);
-        return board.WithSnakes(updated);
+        if (snapshot.Value.Segments.Length >= 2)
+        {
+            var replaced = new Snake(snapshot.Value.Segments, original.Color);
+            var updated = board.Snakes.SetItem(snapshot.Value.SnakeIndex, replaced);
+            return (board.WithSnakes(updated), null);
+        }
+
+        // Final frames of an exit animation: the snake has shrunk below the
+        // two-segment minimum Snake requires for a valid direction. Drop it
+        // from the board and paint the leftover segment (if any) as a plain
+        // overlay cell so the tail still animates cell-by-cell off-screen.
+        var trimmedSnakes = board.Snakes.RemoveAt(snapshot.Value.SnakeIndex);
+        var trimmedBoard = board.WithSnakes(trimmedSnakes);
+        if (snapshot.Value.Segments.Length == 1)
+        {
+            var overlay = new Dictionary<Cell, SnakeColor>
+            {
+                [snapshot.Value.Segments[0]] = original.Color,
+            };
+            return (trimmedBoard, overlay);
+        }
+        return (trimmedBoard, null);
     }
 }
