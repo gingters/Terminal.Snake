@@ -13,7 +13,12 @@ public sealed class BoardRenderer
     public const char BodyChar = '█';
     public const char EmptyChar = ' ';
 
-    public void Render(FrameBuffer buffer, Board board, Viewport viewport, int? selectedSnakeIndex = null)
+    public void Render(
+        FrameBuffer buffer,
+        Board board,
+        Viewport viewport,
+        int? selectedSnakeIndex = null,
+        IReadOnlyDictionary<Cell, SnakeColor>? overlay = null)
     {
         ArgumentNullException.ThrowIfNull(buffer);
         ArgumentNullException.ThrowIfNull(board);
@@ -30,6 +35,20 @@ public sealed class BoardRenderer
         for (var i = 0; i < board.Snakes.Length; i++)
         {
             DrawSnake(buffer, board.Snakes[i], viewport, isSelected: selectedSnakeIndex == i);
+        }
+        DrawOverlay(buffer, viewport, overlay);
+    }
+
+    private static void DrawOverlay(
+        FrameBuffer buffer, Viewport viewport, IReadOnlyDictionary<Cell, SnakeColor>? overlay)
+    {
+        if (overlay is null)
+        {
+            return;
+        }
+        foreach (var entry in overlay)
+        {
+            WriteCell(buffer, viewport, entry.Key, BodyChar, entry.Value, background: null);
         }
     }
 
