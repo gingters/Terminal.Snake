@@ -15,7 +15,7 @@ public static class FixedLevels
         16_213, 17_345, 18_511, 19_701, 20_903,
     };
 
-    public static Board Get(int tutorialIndex)
+    public static Board Get(int tutorialIndex, int maxBoardSide = BoardGenerator.MaxBoardSize)
     {
         if (tutorialIndex < 1 || tutorialIndex > Count)
         {
@@ -23,16 +23,16 @@ public static class FixedLevels
                 nameof(tutorialIndex), tutorialIndex, $"Tutorial index must be in [1, {Count}]");
         }
         var generator = new BoardGenerator();
-        return generator.Generate(tutorialIndex, Seeds[tutorialIndex - 1]);
+        return generator.Generate(tutorialIndex, Seeds[tutorialIndex - 1], maxBoardSide);
     }
 
-    public static IReadOnlyList<Board> All()
+    public static IReadOnlyList<Board> All(int maxBoardSide = BoardGenerator.MaxBoardSize)
     {
         var generator = new BoardGenerator();
         var boards = new List<Board>(Count);
         for (var index = 1; index <= Count; index++)
         {
-            boards.Add(generator.Generate(index, Seeds[index - 1]));
+            boards.Add(generator.Generate(index, Seeds[index - 1], maxBoardSide));
         }
         return boards;
     }

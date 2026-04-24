@@ -22,12 +22,51 @@ public sealed class BoardGeneratorTests
         var generator = new BoardGenerator();
         var board = generator.Generate(levelIndex, seed: 42);
 
-        Assert.InRange(board.Size, BoardGenerator.MinBoardSize, BoardGenerator.MaxBoardSize);
+        // Board size is always ≥ MinBoardSize + 2 because #36 centres the
+        // snake placement inside a larger board with ≥ 1 cell of padding
+        // on every side, and ≤ MaxBoardSize + 2 when no larger terminal
+        // cap is supplied (the placement grid stays capped at 16, padding
+        // adds 2 more cells total).
+        Assert.InRange(board.Size, BoardGenerator.MinBoardSize + 2, BoardGenerator.MaxBoardSize + 2);
         Assert.InRange(board.Snakes.Length, 1, BoardGenerator.MaxSnakesPerBoard);
         foreach (var snake in board.Snakes)
         {
             Assert.InRange(snake.Segments.Length, 2, BoardGenerator.MaxSegmentLength);
         }
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(5)]
+    [InlineData(10)]
+    public void Snakes_sit_at_least_one_cell_away_from_every_border(int levelIndex)
+    {
+        // #36: the outermost snake cell must leave at least one blank cell
+        // before the border so the play area no longer feels packed.
+        var generator = new BoardGenerator();
+        var board = generator.Generate(levelIndex, seed: 42);
+        foreach (var snake in board.Snakes)
+        {
+            foreach (var cell in snake.Segments)
+            {
+                Assert.InRange(cell.X, 1, board.Size - 2);
+                Assert.InRange(cell.Y, 1, board.Size - 2);
+            }
+        }
+    }
+
+    [Fact]
+    public void Board_grows_with_the_level_when_the_terminal_allows_it()
+    {
+        // #36 follow-up: on big terminals the board must keep growing with
+        // the level, not plateau at the generator's placement cap. With a
+        // large maxBoardSide, level 50 produces a much bigger board than
+        // level 1 even though both share the same placement grid cap.
+        var generator = new BoardGenerator();
+        var small = generator.Generate(1, seed: 42, maxBoardSide: 40);
+        var large = generator.Generate(50, seed: 42, maxBoardSide: 40);
+        Assert.True(large.Size > small.Size, $"level 50 ({large.Size}) should be larger than level 1 ({small.Size})");
+        Assert.True(large.Size <= 40, "board never exceeds the supplied terminal cap");
     }
 
     [Fact]

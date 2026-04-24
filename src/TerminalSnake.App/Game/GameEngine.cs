@@ -23,6 +23,9 @@ public sealed class GameEngine
     private readonly HudStrings _hudStrings;
     private readonly TimeSpan _demoMovePause;
     private readonly TimeSpan _demoArmDelay;
+    private readonly int _maxBoardSide;
+
+    private const int LevelPromptMaxDigits = 6;
 
     private Board _currentBoard;
     private Board? _pendingBoardAfterAnimation;
@@ -30,6 +33,7 @@ public sealed class GameEngine
     private Queue<int> _demoQueue = new();
     private TimeSpan _lastDemoMoveAt = TimeSpan.Zero;
     private TimeSpan? _demoArmedAt;
+    private string _levelPromptInput = string.Empty;
 
     public GameEngine(
         LevelManager? levels = null,
@@ -40,7 +44,8 @@ public sealed class GameEngine
         HudStrings? hudStrings = null,
         TimeSpan? demoMovePause = null,
         TimeSpan? demoArmDelay = null,
-        int startLevel = 1)
+        int startLevel = 1,
+        int maxBoardSide = BoardGenerator.MaxBoardSize)
     {
         _levels = Or(levels, DefaultLevels);
         _idle = Or(idleWatcher, DefaultIdle);
@@ -50,8 +55,9 @@ public sealed class GameEngine
         _hudStrings = Or(hudStrings, DefaultHudStrings);
         _demoMovePause = demoMovePause ?? DefaultDemoMovePause;
         _demoArmDelay = demoArmDelay ?? DefaultDemoArmDelay;
+        _maxBoardSide = maxBoardSide;
         LevelIndex = startLevel;
-        _currentBoard = _levels.LoadLevel(startLevel);
+        _currentBoard = _levels.LoadLevel(startLevel, _maxBoardSide);
     }
 
     private static T Or<T>(T? value, Func<T> fallback) where T : class
@@ -84,6 +90,13 @@ public sealed class GameEngine
     // player presses D to re-arm it), so stepping away for a coffee on
     // level 4 does not cause level 5 to start playing itself. See issue #16.
     public bool AutoPlayEnabled { get; private set; } = true;
+
+    // When true, the player opened the level-jump prompt with L (#36). All
+    // gameplay keys are suspended; digit keys append to LevelPromptInput,
+    // Enter jumps, Esc cancels.
+    public bool LevelPromptActive { get; private set; }
+
+    public string LevelPromptInput => _levelPromptInput;
 
     public void HandleKey(KeyEvent key, TimeSpan now)
     {
@@ -144,7 +157,7 @@ public sealed class GameEngine
 
     private void TickLevelTransition()
     {
-        if (!_animation.IsBusy && _currentBoard.Snakes.Length == 0)
+        if (!_animation.IsBusy && !LevelPromptActive && _currentBoard.Snakes.Length == 0)
         {
             AdvanceToNextLevel();
         }
@@ -152,7 +165,7 @@ public sealed class GameEngine
 
     private void TickDemoModeTransition(TimeSpan now)
     {
-        if (!AutoPlayEnabled || Mode != GameMode.Player)
+        if (!AutoPlayEnabled || Mode != GameMode.Player || LevelPromptActive)
         {
             return;
         }
@@ -186,7 +199,10 @@ public sealed class GameEngine
         var buffer = new FrameBuffer(viewport.TerminalWidth, viewport.TerminalHeight);
         var (visibleBoard, overlay, effectiveSelection) = ApplyAnimationSnapshot(_currentBoard, now);
         _renderer.Render(buffer, visibleBoard, viewport, effectiveSelection, overlay);
-        _hudRenderer.Render(buffer, viewport, new HudModel(LevelIndex, Mode, HelpVisible, _hudStrings));
+        _hudRenderer.Render(buffer, viewport, new HudModel(
+            LevelIndex, Mode, HelpVisible, _hudStrings,
+            LevelPromptActive: LevelPromptActive,
+            LevelPromptInput: _levelPromptInput));
         return buffer;
     }
 
@@ -207,6 +223,11 @@ public sealed class GameEngine
 
     private void DispatchKey(KeyEvent key, TimeSpan now)
     {
+        if (LevelPromptActive)
+        {
+            HandleLevelPromptKey(key);
+            return;
+        }
         if (HandleMetaKey(key, now))
         {
             return;
@@ -230,7 +251,88 @@ public sealed class GameEngine
             _demoArmedAt = now;
             return true;
         }
+        if (key.Key == ConsoleKey.L)
+        {
+            OpenLevelPrompt();
+            return true;
+        }
         return false;
+    }
+
+    private void OpenLevelPrompt()
+    {
+        LevelPromptActive = true;
+        _levelPromptInput = string.Empty;
+    }
+
+    private void HandleLevelPromptKey(KeyEvent key)
+    {
+        if (TryCommitOrCancelPrompt(key))
+        {
+            return;
+        }
+        if (TryBackspacePrompt(key))
+        {
+            return;
+        }
+        TryAppendPromptDigit(key);
+    }
+
+    private bool TryCommitOrCancelPrompt(KeyEvent key)
+    {
+        if (key.Key == ConsoleKey.Enter)
+        {
+            CommitLevelPrompt();
+            return true;
+        }
+        if (key.Key == ConsoleKey.Escape || key.Key == ConsoleKey.L)
+        {
+            CancelLevelPrompt();
+            return true;
+        }
+        return false;
+    }
+
+    private bool TryBackspacePrompt(KeyEvent key)
+    {
+        if (key.Key == ConsoleKey.Backspace && _levelPromptInput.Length > 0)
+        {
+            _levelPromptInput = _levelPromptInput[..^1];
+            return true;
+        }
+        return false;
+    }
+
+    private void TryAppendPromptDigit(KeyEvent key)
+    {
+        if (TryDigitChar(key.Key) is char digit && _levelPromptInput.Length < LevelPromptMaxDigits)
+        {
+            _levelPromptInput += digit;
+        }
+    }
+
+    private void CommitLevelPrompt()
+    {
+        if (int.TryParse(_levelPromptInput, out var level) && level >= 1)
+        {
+            JumpToLevel(level);
+        }
+        CancelLevelPrompt();
+    }
+
+    private void CancelLevelPrompt()
+    {
+        LevelPromptActive = false;
+        _levelPromptInput = string.Empty;
+    }
+
+    private static char? TryDigitChar(ConsoleKey key)
+    {
+        if (key >= ConsoleKey.D0 && key <= ConsoleKey.D9)
+        {
+            return (char)('0' + (key - ConsoleKey.D0));
+        }
+        return null;
     }
 
     private void DispatchGameplayKey(KeyEvent key, TimeSpan now)
@@ -278,36 +380,13 @@ public sealed class GameEngine
             RestartLevel();
             return true;
         }
-        if (TryMapDigitToLevel(key.Key) is int jumpLevel)
-        {
-            JumpToLevel(jumpLevel);
-            return true;
-        }
         return false;
-    }
-
-    // Digit keys 1..9 jump to the matching tutorial level, 0 jumps to
-    // level 10 — the end of the handcrafted levels, which is also the
-    // jumping-off point into the procedural generator. Lets the player
-    // skip the easy intro levels when they just want harder puzzles
-    // (#25). Returns null for any non-digit key.
-    private static int? TryMapDigitToLevel(ConsoleKey key)
-    {
-        if (key >= ConsoleKey.D1 && key <= ConsoleKey.D9)
-        {
-            return key - ConsoleKey.D0;
-        }
-        if (key == ConsoleKey.D0)
-        {
-            return 10;
-        }
-        return null;
     }
 
     private void JumpToLevel(int levelIndex)
     {
         LevelIndex = levelIndex;
-        _currentBoard = _levels.LoadLevel(levelIndex);
+        _currentBoard = _levels.LoadLevel(levelIndex, _maxBoardSide);
         _pendingBoardAfterAnimation = null;
         _animation.Clear();
         _demoQueue.Clear();
@@ -428,7 +507,7 @@ public sealed class GameEngine
 
     private void RestartLevel()
     {
-        _currentBoard = _levels.LoadLevel(LevelIndex);
+        _currentBoard = _levels.LoadLevel(LevelIndex, _maxBoardSide);
         _pendingBoardAfterAnimation = null;
         _animation.Clear();
         _demoQueue.Clear();
@@ -438,7 +517,7 @@ public sealed class GameEngine
     private void AdvanceToNextLevel()
     {
         LevelIndex += 1;
-        _currentBoard = _levels.LoadLevel(LevelIndex);
+        _currentBoard = _levels.LoadLevel(LevelIndex, _maxBoardSide);
         SelectedSnakeIndex = null;
         _demoQueue.Clear();
 

@@ -40,7 +40,7 @@ public sealed class BoardGenerator
         _solvableAttempts = solvableAttempts;
     }
 
-    public Board Generate(int levelIndex, int seed)
+    public Board Generate(int levelIndex, int seed, int maxBoardSide = MaxBoardSize)
     {
         if (levelIndex < 1)
         {
@@ -48,6 +48,7 @@ public sealed class BoardGenerator
         }
 
         var profile = DifficultyProfile.For(levelIndex);
+        var targetSize = DetermineBoardSize(levelIndex, profile.Size, maxBoardSide);
         var requireChallenge = levelIndex >= 2;
         for (var attempt = 0; attempt < _solvableAttempts; attempt++)
         {
@@ -55,11 +56,46 @@ public sealed class BoardGenerator
             var candidate = TryBuildAcceptableBoard(random, profile, requireChallenge);
             if (candidate is not null)
             {
-                return candidate;
+                return CenterOnLargerBoard(candidate, targetSize);
             }
         }
 
-        return FallbackBoard(profile);
+        return CenterOnLargerBoard(FallbackBoard(profile), targetSize);
+    }
+
+    // The generator produces snake layouts on the DifficultyProfile's
+    // placement grid (which tracks difficulty, not screen size). The
+    // resulting snakes are then centred on a larger board sized to the
+    // terminal so players have real breathing room around the puzzle
+    // (issue #36). Padding is ≥ 1 cell on every side because targetSize
+    // is always at least placementSize + 2.
+    private static int DetermineBoardSize(int levelIndex, int placementSize, int maxBoardSide)
+    {
+        var minSize = placementSize + 2;
+        var desired = MinBoardSize + Math.Max(0, levelIndex - 1);
+        var cap = Math.Max(minSize, maxBoardSide);
+        return Math.Clamp(desired, minSize, cap);
+    }
+
+    private static Board CenterOnLargerBoard(Board placement, int targetSize)
+    {
+        if (placement.Size == targetSize)
+        {
+            return placement;
+        }
+        var offset = (targetSize - placement.Size) / 2;
+        var delta = new Cell(offset, offset);
+        var shifted = new List<Snake>(placement.Snakes.Length);
+        foreach (var snake in placement.Snakes)
+        {
+            var segments = new List<Cell>(snake.Segments.Length);
+            foreach (var cell in snake.Segments)
+            {
+                segments.Add(cell + delta);
+            }
+            shifted.Add(new Snake(segments, snake.Color));
+        }
+        return new Board(targetSize, shifted);
     }
 
     private static Board? TryBuildAcceptableBoard(Random random, DifficultyProfile profile, bool requireChallenge)

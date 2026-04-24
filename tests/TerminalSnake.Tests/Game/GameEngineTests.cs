@@ -255,34 +255,75 @@ public sealed class GameEngineTests
         Assert.True(afterCount <= originalCount);
     }
 
-    [Theory]
-    [InlineData(ConsoleKey.D1, 1)]
-    [InlineData(ConsoleKey.D2, 2)]
-    [InlineData(ConsoleKey.D5, 5)]
-    [InlineData(ConsoleKey.D9, 9)]
-    [InlineData(ConsoleKey.D0, 10)]
-    public void Digit_keys_jump_to_the_matching_level(ConsoleKey digit, int expectedLevel)
+    [Fact]
+    public void L_opens_the_level_prompt_and_blocks_gameplay_keys()
     {
-        // Issue #25: letting the player skip the intro levels on demand.
-        // Pressing 1..9 jumps to that level; 0 jumps to level 10 (the end
-        // of the handcrafted levels).
+        // Issue #36: digit-direct-jumps (#25) were replaced with an L
+        // prompt so the player can type multi-digit levels. While the
+        // prompt is open, gameplay keys are suspended.
         var engine = CreateEngine(startLevel: 1);
-        engine.HandleKey(new KeyEvent(digit), TimeSpan.Zero);
-        Assert.Equal(expectedLevel, engine.LevelIndex);
+        engine.HandleKey(new KeyEvent(ConsoleKey.L), TimeSpan.Zero);
+        Assert.True(engine.LevelPromptActive);
+        Assert.Equal(string.Empty, engine.LevelPromptInput);
+
+        // Digits accumulate in the input buffer.
+        engine.HandleKey(new KeyEvent(ConsoleKey.D1), TimeSpan.FromMilliseconds(1));
+        engine.HandleKey(new KeyEvent(ConsoleKey.D2), TimeSpan.FromMilliseconds(2));
+        Assert.Equal("12", engine.LevelPromptInput);
+
+        // Gameplay keys do not escape the prompt.
+        engine.HandleKey(new KeyEvent(ConsoleKey.Tab), TimeSpan.FromMilliseconds(3));
+        Assert.True(engine.LevelPromptActive);
+        Assert.Null(engine.SelectedSnakeIndex);
     }
 
     [Fact]
-    public void Digit_jump_replaces_the_current_board_and_clears_selection()
+    public void Level_prompt_enter_commits_the_jump()
     {
         var engine = CreateEngine(startLevel: 1);
-        engine.HandleKey(new KeyEvent(ConsoleKey.Tab), TimeSpan.Zero);
-        Assert.NotNull(engine.SelectedSnakeIndex);
-        var level1Board = engine.Board;
+        engine.HandleKey(new KeyEvent(ConsoleKey.L), TimeSpan.Zero);
+        engine.HandleKey(new KeyEvent(ConsoleKey.D1), TimeSpan.FromMilliseconds(1));
+        engine.HandleKey(new KeyEvent(ConsoleKey.D5), TimeSpan.FromMilliseconds(2));
+        engine.HandleKey(new KeyEvent(ConsoleKey.Enter), TimeSpan.FromMilliseconds(3));
 
-        engine.HandleKey(new KeyEvent(ConsoleKey.D5), TimeSpan.FromMilliseconds(10));
-        Assert.Equal(5, engine.LevelIndex);
-        Assert.Null(engine.SelectedSnakeIndex);
-        Assert.NotEqual(level1Board, engine.Board);
+        Assert.Equal(15, engine.LevelIndex);
+        Assert.False(engine.LevelPromptActive);
+        Assert.Equal(string.Empty, engine.LevelPromptInput);
+    }
+
+    [Fact]
+    public void Level_prompt_escape_cancels_without_jumping()
+    {
+        var engine = CreateEngine(startLevel: 3);
+        engine.HandleKey(new KeyEvent(ConsoleKey.L), TimeSpan.Zero);
+        engine.HandleKey(new KeyEvent(ConsoleKey.D9), TimeSpan.FromMilliseconds(1));
+        engine.HandleKey(new KeyEvent(ConsoleKey.Escape), TimeSpan.FromMilliseconds(2));
+
+        Assert.Equal(3, engine.LevelIndex);
+        Assert.False(engine.LevelPromptActive);
+    }
+
+    [Fact]
+    public void Level_prompt_backspace_deletes_last_digit()
+    {
+        var engine = CreateEngine();
+        engine.HandleKey(new KeyEvent(ConsoleKey.L), TimeSpan.Zero);
+        engine.HandleKey(new KeyEvent(ConsoleKey.D1), TimeSpan.FromMilliseconds(1));
+        engine.HandleKey(new KeyEvent(ConsoleKey.D2), TimeSpan.FromMilliseconds(2));
+        engine.HandleKey(new KeyEvent(ConsoleKey.D3), TimeSpan.FromMilliseconds(3));
+        engine.HandleKey(new KeyEvent(ConsoleKey.Backspace), TimeSpan.FromMilliseconds(4));
+
+        Assert.Equal("12", engine.LevelPromptInput);
+    }
+
+    [Fact]
+    public void Digit_key_outside_the_prompt_does_nothing()
+    {
+        // #36 removed the #25 digit-direct-jump behaviour — pressing 5
+        // outside the prompt must no longer change the level.
+        var engine = CreateEngine(startLevel: 2);
+        engine.HandleKey(new KeyEvent(ConsoleKey.D5), TimeSpan.Zero);
+        Assert.Equal(2, engine.LevelIndex);
     }
 
     [Fact]
