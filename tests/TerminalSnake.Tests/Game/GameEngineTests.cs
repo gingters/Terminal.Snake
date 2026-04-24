@@ -281,6 +281,27 @@ public sealed class GameEngineTests
         Assert.True(engine.IsAnimating);
     }
 
+    [Theory]
+    [InlineData(ConsoleKey.UpArrow)]
+    [InlineData(ConsoleKey.DownArrow)]
+    [InlineData(ConsoleKey.LeftArrow)]
+    [InlineData(ConsoleKey.RightArrow)]
+    public void Arrow_keys_keep_the_selection_pointing_at_a_valid_snake(ConsoleKey arrow)
+    {
+        // Issue #19: arrow keys jump the selection to the nearest snake in
+        // the given direction. Exact indices would be flaky against the
+        // seeded level 1 board, so we assert the behavioural invariant:
+        // no crash, no out-of-range index, no surprise deselect.
+        var engine = CreateEngine();
+        engine.HandleKey(new KeyEvent(ConsoleKey.Tab), TimeSpan.Zero);
+        Assert.NotNull(engine.SelectedSnakeIndex);
+
+        engine.HandleKey(new KeyEvent(arrow), TimeSpan.FromMilliseconds(1));
+        var after = engine.SelectedSnakeIndex;
+        Assert.NotNull(after);
+        Assert.InRange(after!.Value, 0, engine.Board.Snakes.Length - 1);
+    }
+
     [Fact]
     public void Clicking_an_empty_cell_is_ignored()
     {

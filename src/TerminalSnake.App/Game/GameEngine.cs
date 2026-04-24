@@ -240,6 +240,11 @@ public sealed class GameEngine
             CycleSelection(key.Shift ? -1 : +1);
             return;
         }
+        if (TryMapArrowToDirection(key.Key) is Direction direction)
+        {
+            SelectNearestSnakeInDirection(direction);
+            return;
+        }
         if (IsTriggerKey(key.Key))
         {
             TriggerSelectedSnake(now);
@@ -248,6 +253,32 @@ public sealed class GameEngine
         if (key.Key == ConsoleKey.R)
         {
             RestartLevel();
+        }
+    }
+
+    private static Direction? TryMapArrowToDirection(ConsoleKey key) => key switch
+    {
+        ConsoleKey.UpArrow => Direction.Up,
+        ConsoleKey.DownArrow => Direction.Down,
+        ConsoleKey.LeftArrow => Direction.Left,
+        ConsoleKey.RightArrow => Direction.Right,
+        _ => null,
+    };
+
+    private void SelectNearestSnakeInDirection(Direction direction)
+    {
+        if (_currentBoard.Snakes.Length == 0)
+        {
+            return;
+        }
+        var origin = SelectedSnakeIndex is int idx
+            ? _currentBoard.Snakes[idx].Head
+            : new Cell(_currentBoard.Size / 2, _currentBoard.Size / 2);
+        var nearest = SnakeSelection.FindNearestInDirection(
+            _currentBoard.Snakes, origin, direction, SelectedSnakeIndex);
+        if (nearest is int nextIndex)
+        {
+            SelectedSnakeIndex = nextIndex;
         }
     }
 
