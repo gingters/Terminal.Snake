@@ -10,6 +10,14 @@ public sealed class BoardRenderer
     public const char BorderCornerTopRight = '┐';
     public const char BorderCornerBottomLeft = '└';
     public const char BorderCornerBottomRight = '┘';
+    // Double-line glyphs frame the actual play area so the exit edges are
+    // visually distinct from the outer terminal frame (issue #24).
+    public const char BoardBorderHorizontal = '═';
+    public const char BoardBorderVertical = '║';
+    public const char BoardBorderCornerTopLeft = '╔';
+    public const char BoardBorderCornerTopRight = '╗';
+    public const char BoardBorderCornerBottomLeft = '╚';
+    public const char BoardBorderCornerBottomRight = '╝';
     public const char BodyChar = '█';
     public const char SelectedBodyChar = '▓';
     public const char EmptyChar = ' ';
@@ -32,12 +40,49 @@ public sealed class BoardRenderer
 
         buffer.Clear();
         DrawFrame(buffer, viewport);
+        DrawBoardBorder(buffer, viewport);
         ClearBoardArea(buffer, viewport);
         for (var i = 0; i < board.Snakes.Length; i++)
         {
             DrawSnake(buffer, board.Snakes[i], viewport, isSelected: selectedSnakeIndex == i);
         }
         DrawOverlay(buffer, viewport, overlay);
+    }
+
+    private static void DrawBoardBorder(FrameBuffer buffer, Viewport viewport)
+    {
+        var topRow = viewport.BoardOriginY - 1;
+        var bottomRow = viewport.BoardOriginY + viewport.BoardCharHeight;
+        var leftCol = viewport.BoardOriginX - 1;
+        var rightCol = viewport.BoardOriginX + viewport.BoardCharWidth;
+        TrySetInsideFrame(buffer, leftCol, topRow, BoardBorderCornerTopLeft);
+        TrySetInsideFrame(buffer, rightCol, topRow, BoardBorderCornerTopRight);
+        TrySetInsideFrame(buffer, leftCol, bottomRow, BoardBorderCornerBottomLeft);
+        TrySetInsideFrame(buffer, rightCol, bottomRow, BoardBorderCornerBottomRight);
+        for (var x = viewport.BoardOriginX; x < rightCol; x++)
+        {
+            TrySetInsideFrame(buffer, x, topRow, BoardBorderHorizontal);
+            TrySetInsideFrame(buffer, x, bottomRow, BoardBorderHorizontal);
+        }
+        for (var y = viewport.BoardOriginY; y < bottomRow; y++)
+        {
+            TrySetInsideFrame(buffer, leftCol, y, BoardBorderVertical);
+            TrySetInsideFrame(buffer, rightCol, y, BoardBorderVertical);
+        }
+    }
+
+    private static void TrySetInsideFrame(FrameBuffer buffer, int x, int y, char ch)
+    {
+        // At minimum viewport size the board sits flush against the outer
+        // terminal frame on the left and right, so the border would overwrite
+        // the frame chars and chew a gap in the outer rectangle. Skip any
+        // cell that is on the frame edge; the frame already marks the play
+        // boundary there.
+        if (x <= 0 || x >= buffer.Width - 1 || y <= 0 || y >= buffer.Height - 1)
+        {
+            return;
+        }
+        buffer.Set(x, y, ch);
     }
 
     private static void DrawOverlay(

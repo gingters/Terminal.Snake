@@ -159,6 +159,55 @@ public sealed class BoardRendererTests
     }
 
     [Fact]
+    public void Board_border_is_drawn_around_the_play_area_when_viewport_has_slack()
+    {
+        // Issue #24: the outer terminal frame is several cells away from the
+        // play area on spacious terminals, so the actual edge where snakes
+        // exit needs its own visible border. With a taller/wider viewport
+        // than the minimum, the double-line box lands in padding space.
+        var board = SimpleBoard(6, Snake(SnakeColor.Red, (0, 0), (1, 0)));
+        var viewport = ViewportCalculator.Compute(60, 20, 6);
+        var buffer = new FrameBuffer(viewport.TerminalWidth, viewport.TerminalHeight);
+        new BoardRenderer().Render(buffer, board, viewport);
+
+        var topRow = viewport.BoardOriginY - 1;
+        var bottomRow = viewport.BoardOriginY + viewport.BoardCharHeight;
+        var leftCol = viewport.BoardOriginX - 1;
+        var rightCol = viewport.BoardOriginX + viewport.BoardCharWidth;
+        Assert.Equal(BoardRenderer.BoardBorderCornerTopLeft, buffer[leftCol, topRow].Char);
+        Assert.Equal(BoardRenderer.BoardBorderCornerTopRight, buffer[rightCol, topRow].Char);
+        Assert.Equal(BoardRenderer.BoardBorderCornerBottomLeft, buffer[leftCol, bottomRow].Char);
+        Assert.Equal(BoardRenderer.BoardBorderCornerBottomRight, buffer[rightCol, bottomRow].Char);
+        Assert.Equal(BoardRenderer.BoardBorderHorizontal, buffer[viewport.BoardOriginX + 2, topRow].Char);
+        Assert.Equal(BoardRenderer.BoardBorderVertical, buffer[leftCol, viewport.BoardOriginY + 2].Char);
+    }
+
+    [Fact]
+    public void Board_border_never_overwrites_the_outer_terminal_frame()
+    {
+        // At minimum viewport size the board is flush against the outer
+        // frame on the left and right. The board border must not eat into
+        // the frame glyphs — those are what the player sees as the left/
+        // right play-area edge in that layout.
+        var board = SimpleBoard(5, Snake(SnakeColor.Red, (0, 0), (1, 0)));
+        var viewport = ViewportCalculator.Compute(
+            ViewportCalculator.MinimumWidth,
+            ViewportCalculator.MinimumHeight,
+            5);
+        var buffer = new FrameBuffer(viewport.TerminalWidth, viewport.TerminalHeight);
+        new BoardRenderer().Render(buffer, board, viewport);
+
+        Assert.Equal(BoardRenderer.BorderCornerTopLeft, buffer[0, 0].Char);
+        Assert.Equal(BoardRenderer.BorderCornerTopRight, buffer[viewport.TerminalWidth - 1, 0].Char);
+        Assert.Equal(BoardRenderer.BorderCornerBottomLeft, buffer[0, viewport.TerminalHeight - 1].Char);
+        Assert.Equal(BoardRenderer.BorderCornerBottomRight,
+            buffer[viewport.TerminalWidth - 1, viewport.TerminalHeight - 1].Char);
+        Assert.Equal(BoardRenderer.BorderVertical, buffer[0, viewport.BoardOriginY].Char);
+        Assert.Equal(BoardRenderer.BorderVertical,
+            buffer[viewport.TerminalWidth - 1, viewport.BoardOriginY].Char);
+    }
+
+    [Fact]
     public void Overlay_cells_are_painted_as_body_blocks_in_their_color()
     {
         var board = SimpleBoard(6, Snake(SnakeColor.Red, (0, 0), (1, 0)));
