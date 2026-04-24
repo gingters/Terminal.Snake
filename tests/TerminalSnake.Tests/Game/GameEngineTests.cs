@@ -479,8 +479,9 @@ public sealed class GameEngineTests
         Assert.True(engine.Board.Snakes.Length >= 2);
 
         // Snapshot every other snake's body-cell positions — those cells
-        // never move during an animation of a different snake, so any ▓
-        // (SelectedBodyChar) appearing there must be a mis-highlight.
+        // never move during an animation of a different snake, so any
+        // reverse-video glyph appearing there (the selection highlight)
+        // must be a mis-highlight of the wrong snake.
         var otherCells = new List<(int X, int Y)>();
         var animatedIndex = 0;
         for (var i = 0; i < engine.Board.Snakes.Length; i++)
@@ -509,7 +510,9 @@ public sealed class GameEngineTests
             {
                 var bx = viewport.BoardOriginX + cell.X * ViewportCalculator.CellCharWidth;
                 var by = viewport.BoardOriginY + cell.Y * ViewportCalculator.CellCharHeight;
-                Assert.NotEqual(BoardRenderer.SelectedBodyChar, buffer[bx, by].Char);
+                Assert.False(
+                    buffer[bx, by].Reverse,
+                    $"non-animated snake cell at ({cell.X},{cell.Y}) must not carry the selection highlight");
             }
             if (!engine.IsAnimating)
             {
