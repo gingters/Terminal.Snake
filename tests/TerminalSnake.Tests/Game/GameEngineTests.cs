@@ -236,9 +236,11 @@ public sealed class GameEngineTests
     {
         var engine = CreateEngine(animationStep: TimeSpan.FromMilliseconds(5));
         var originalCount = engine.Board.Snakes.Length;
-        engine.HandleKey(new KeyEvent(ConsoleKey.Tab), TimeSpan.Zero);
-        var selected = engine.SelectedSnakeIndex!.Value;
-        var snakeBefore = engine.Board.Snakes[selected];
+        // Solver picks a snake that is actually movable on the starting
+        // board — the first snake on disk is often blocked by design
+        // since #14, so Tab+Enter would no-op.
+        var movable = Solver.TrySolve(engine.Board)![0];
+        CycleTabUntil(engine, movable);
         engine.HandleKey(new KeyEvent(ConsoleKey.Enter), TimeSpan.Zero);
 
         Assert.True(engine.IsAnimating);
@@ -345,10 +347,13 @@ public sealed class GameEngineTests
     public void Clicking_a_board_cell_on_a_snake_selects_and_triggers_it()
     {
         var engine = CreateEngine();
-        var snake = engine.Board.Snakes[0];
+        // First-snake placement is sometimes blocked on purpose (#14), so
+        // the test targets whichever snake the solver plays first.
+        var movable = Solver.TrySolve(engine.Board)![0];
+        var snake = engine.Board.Snakes[movable];
         var head = snake.Head;
         engine.HandleBoardClick(head.X, head.Y, TimeSpan.Zero);
-        Assert.Equal(0, engine.SelectedSnakeIndex);
+        Assert.Equal(movable, engine.SelectedSnakeIndex);
         Assert.True(engine.IsAnimating);
     }
 
@@ -423,8 +428,10 @@ public sealed class GameEngineTests
     public void Animations_block_key_input()
     {
         var engine = CreateEngine(animationStep: TimeSpan.FromSeconds(10));
-        engine.HandleKey(new KeyEvent(ConsoleKey.Tab), TimeSpan.Zero);
-        engine.HandleKey(new KeyEvent(ConsoleKey.Enter), TimeSpan.Zero);
+        var movable = Solver.TrySolve(engine.Board)![0];
+        var snake = engine.Board.Snakes[movable];
+        engine.HandleBoardClick(snake.Head.X, snake.Head.Y, TimeSpan.Zero);
+        Assert.True(engine.IsAnimating);
 
         var selectionBefore = engine.SelectedSnakeIndex;
         engine.HandleKey(new KeyEvent(ConsoleKey.Tab), TimeSpan.FromMilliseconds(10));
@@ -458,8 +465,13 @@ public sealed class GameEngineTests
             ViewportCalculator.MinimumHeight + 8,
             engine.Board.Size);
 
-        engine.HandleKey(new KeyEvent(ConsoleKey.Tab), TimeSpan.Zero);
-        engine.HandleKey(new KeyEvent(ConsoleKey.Enter), TimeSpan.Zero);
+        // Pick a movable snake via the solver — first-snake placement is
+        // sometimes blocked on purpose (#14), in which case Tab+Enter would
+        // no-op and the test would fall through without covering the exit
+        // animation it is meant to exercise.
+        var movable = Solver.TrySolve(engine.Board)![0];
+        var head = engine.Board.Snakes[movable].Head;
+        engine.HandleBoardClick(head.X, head.Y, TimeSpan.Zero);
 
         for (var ms = 0; ms <= 1_500; ms += 2)
         {
@@ -522,9 +534,11 @@ public sealed class GameEngineTests
         // Snapshot every other snake's body-cell positions — those cells
         // never move during an animation of a different snake, so any
         // reverse-video glyph appearing there (the selection highlight)
-        // must be a mis-highlight of the wrong snake.
+        // must be a mis-highlight of the wrong snake. The animated snake
+        // is whichever the solver picks first (first-snake placement is
+        // sometimes blocked on purpose since #14).
+        var animatedIndex = Solver.TrySolve(engine.Board)![0];
         var otherCells = new List<(int X, int Y)>();
-        var animatedIndex = 0;
         for (var i = 0; i < engine.Board.Snakes.Length; i++)
         {
             if (i == animatedIndex)
@@ -595,6 +609,21 @@ public sealed class GameEngineTests
             }
         }
         Assert.Fail("expected at least one snake to exit during the level");
+    }
+
+    private static void CycleTabUntil(GameEngine engine, int targetIndex)
+    {
+        var clock = TimeSpan.Zero;
+        var count = engine.Board.Snakes.Length;
+        for (var i = 0; i < count + 1; i++)
+        {
+            if (engine.SelectedSnakeIndex == targetIndex)
+            {
+                return;
+            }
+            clock = clock.Add(TimeSpan.FromMilliseconds(1));
+            engine.HandleKey(new KeyEvent(ConsoleKey.Tab), clock);
+        }
     }
 
     private static void DrainCurrentLevel(GameEngine engine)
