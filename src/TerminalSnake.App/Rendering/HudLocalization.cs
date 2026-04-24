@@ -10,7 +10,8 @@ public sealed record HudStrings(
     string HelpR,
     string HelpH,
     string HelpD,
-    string HelpQ);
+    string HelpQ,
+    string HelpLevels);
 
 public static class HudLocalization
 {
@@ -32,7 +33,8 @@ public static class HudLocalization
                 HelpR: "R — restart level",
                 HelpH: "H — toggle help",
                 HelpD: "D — re-enable auto-play",
-                HelpQ: "Q / Esc — quit"),
+                HelpQ: "Q / Esc — quit",
+                HelpLevels: "1-9, 0 — jump to level (0 = 10)"),
             ["de"] = new(
                 Title: "TerminalSnake",
                 LevelLabel: "Level",
@@ -43,7 +45,8 @@ public static class HudLocalization
                 HelpR: "R — Level neu starten",
                 HelpH: "H — Hilfe ein-/ausblenden",
                 HelpD: "D — Auto-Spiel aktivieren",
-                HelpQ: "Q / Esc — beenden"),
+                HelpQ: "Q / Esc — beenden",
+                HelpLevels: "1-9, 0 — Level springen (0 = 10)"),
             ["fr"] = new(
                 Title: "TerminalSnake",
                 LevelLabel: "Niveau",
@@ -54,7 +57,8 @@ public static class HudLocalization
                 HelpR: "R — recommencer le niveau",
                 HelpH: "H — afficher l'aide",
                 HelpD: "D — réactiver la démonstration",
-                HelpQ: "Q / Échap — quitter"),
+                HelpQ: "Q / Échap — quitter",
+                HelpLevels: "1-9, 0 — aller au niveau (0 = 10)"),
             ["es"] = new(
                 Title: "TerminalSnake",
                 LevelLabel: "Nivel",
@@ -65,7 +69,8 @@ public static class HudLocalization
                 HelpR: "R — reiniciar nivel",
                 HelpH: "H — mostrar ayuda",
                 HelpD: "D — reactivar la demostración",
-                HelpQ: "Q / Esc — salir"),
+                HelpQ: "Q / Esc — salir",
+                HelpLevels: "1-9, 0 — saltar al nivel (0 = 10)"),
             ["it"] = new(
                 Title: "TerminalSnake",
                 LevelLabel: "Livello",
@@ -76,7 +81,8 @@ public static class HudLocalization
                 HelpR: "R — ricomincia livello",
                 HelpH: "H — mostra aiuto",
                 HelpD: "D — riattiva la dimostrazione",
-                HelpQ: "Q / Esc — esci"),
+                HelpQ: "Q / Esc — esci",
+                HelpLevels: "1-9, 0 — salta al livello (0 = 10)"),
             ["pt"] = new(
                 Title: "TerminalSnake",
                 LevelLabel: "Nível",
@@ -87,7 +93,8 @@ public static class HudLocalization
                 HelpR: "R — reiniciar nível",
                 HelpH: "H — alternar ajuda",
                 HelpD: "D — reativar a reprodução automática",
-                HelpQ: "Q / Esc — sair"),
+                HelpQ: "Q / Esc — sair",
+                HelpLevels: "1-9, 0 — ir para o nível (0 = 10)"),
             ["nl"] = new(
                 Title: "TerminalSnake",
                 LevelLabel: "Level",
@@ -98,7 +105,8 @@ public static class HudLocalization
                 HelpR: "R — level herstarten",
                 HelpH: "H — hulp tonen",
                 HelpD: "D — auto-modus herinschakelen",
-                HelpQ: "Q / Esc — afsluiten"),
+                HelpQ: "Q / Esc — afsluiten",
+                HelpLevels: "1-9, 0 — naar level springen (0 = 10)"),
         };
 
     public static HudStrings Default => Locales[Fallback];

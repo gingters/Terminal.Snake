@@ -255,6 +255,36 @@ public sealed class GameEngineTests
         Assert.True(afterCount <= originalCount);
     }
 
+    [Theory]
+    [InlineData(ConsoleKey.D1, 1)]
+    [InlineData(ConsoleKey.D2, 2)]
+    [InlineData(ConsoleKey.D5, 5)]
+    [InlineData(ConsoleKey.D9, 9)]
+    [InlineData(ConsoleKey.D0, 10)]
+    public void Digit_keys_jump_to_the_matching_level(ConsoleKey digit, int expectedLevel)
+    {
+        // Issue #25: letting the player skip the intro levels on demand.
+        // Pressing 1..9 jumps to that level; 0 jumps to level 10 (the end
+        // of the handcrafted levels).
+        var engine = CreateEngine(startLevel: 1);
+        engine.HandleKey(new KeyEvent(digit), TimeSpan.Zero);
+        Assert.Equal(expectedLevel, engine.LevelIndex);
+    }
+
+    [Fact]
+    public void Digit_jump_replaces_the_current_board_and_clears_selection()
+    {
+        var engine = CreateEngine(startLevel: 1);
+        engine.HandleKey(new KeyEvent(ConsoleKey.Tab), TimeSpan.Zero);
+        Assert.NotNull(engine.SelectedSnakeIndex);
+        var level1Board = engine.Board;
+
+        engine.HandleKey(new KeyEvent(ConsoleKey.D5), TimeSpan.FromMilliseconds(10));
+        Assert.Equal(5, engine.LevelIndex);
+        Assert.Null(engine.SelectedSnakeIndex);
+        Assert.NotEqual(level1Board, engine.Board);
+    }
+
     [Fact]
     public void R_restarts_the_current_level()
     {
