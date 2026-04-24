@@ -59,7 +59,7 @@ public sealed class BoardRendererTests
     }
 
     [Fact]
-    public void Selected_snake_head_uses_reverse_video_and_body_uses_shaded_block()
+    public void Selected_snake_layers_outlined_head_shaded_body_and_reverse_video()
     {
         var snake = Snake(SnakeColor.Yellow, (2, 2), (1, 2), (0, 2));
         var board = SimpleBoard(6, snake);
@@ -69,7 +69,9 @@ public sealed class BoardRendererTests
 
         var headX = viewport.BoardOriginX + 2 * ViewportCalculator.CellCharWidth;
         var headY = viewport.BoardOriginY + 2 * ViewportCalculator.CellCharHeight;
-        Assert.True(buffer[headX, headY].Reverse, "selected snake's head should be rendered in reverse video");
+        // Outlined arrow (shape cue) — distinct from the filled '▶' of an unselected snake.
+        Assert.Equal('▷', buffer[headX, headY].Char);
+        Assert.True(buffer[headX, headY].Reverse, "selected snake's head should also be in reverse video");
         Assert.Equal(SnakeColor.Yellow, buffer[headX, headY].Foreground);
 
         var bodyX = viewport.BoardOriginX + 1 * ViewportCalculator.CellCharWidth;
@@ -79,7 +81,7 @@ public sealed class BoardRendererTests
     }
 
     [Fact]
-    public void Unselected_snake_head_is_not_reverse_and_body_uses_full_block()
+    public void Unselected_snake_uses_filled_arrow_and_full_block()
     {
         var snake = Snake(SnakeColor.Yellow, (2, 2), (1, 2), (0, 2));
         var board = SimpleBoard(6, snake);
@@ -89,11 +91,36 @@ public sealed class BoardRendererTests
 
         var headX = viewport.BoardOriginX + 2 * ViewportCalculator.CellCharWidth;
         var headY = viewport.BoardOriginY + 2 * ViewportCalculator.CellCharHeight;
+        Assert.Equal('▶', buffer[headX, headY].Char);
         Assert.False(buffer[headX, headY].Reverse);
 
         var bodyX = viewport.BoardOriginX + 1 * ViewportCalculator.CellCharWidth;
         var bodyY = viewport.BoardOriginY + 2 * ViewportCalculator.CellCharHeight;
         Assert.Equal(BoardRenderer.BodyChar, buffer[bodyX, bodyY].Char);
+    }
+
+    [Theory]
+    [InlineData(Direction.Up, '▲', '△')]
+    [InlineData(Direction.Down, '▼', '▽')]
+    [InlineData(Direction.Left, '◀', '◁')]
+    [InlineData(Direction.Right, '▶', '▷')]
+    public void Head_char_outline_differs_between_unselected_and_selected(
+        Direction direction, char unselected, char selected)
+    {
+        var head = new Cell(3, 3);
+        var tail = head + direction.Opposite().Delta();
+        var snake = new Snake(new[] { head, tail }, SnakeColor.Red);
+        var board = SimpleBoard(7, snake);
+        var viewport = ViewportCalculator.Compute(40, 16, 7);
+        var buffer = new FrameBuffer(viewport.TerminalWidth, viewport.TerminalHeight);
+
+        new BoardRenderer().Render(buffer, board, viewport, selectedSnakeIndex: null);
+        var headX = viewport.BoardOriginX + head.X * ViewportCalculator.CellCharWidth;
+        var headY = viewport.BoardOriginY + head.Y * ViewportCalculator.CellCharHeight;
+        Assert.Equal(unselected, buffer[headX, headY].Char);
+
+        new BoardRenderer().Render(buffer, board, viewport, selectedSnakeIndex: 0);
+        Assert.Equal(selected, buffer[headX, headY].Char);
     }
 
     [Fact]

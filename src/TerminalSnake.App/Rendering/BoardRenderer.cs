@@ -49,7 +49,7 @@ public sealed class BoardRenderer
         }
         foreach (var entry in overlay)
         {
-            WriteCell(buffer, viewport, entry.Key, BodyChar, entry.Value, background: null);
+            WriteCell(buffer, viewport, entry.Key, BodyChar, entry.Value, reverse: false);
         }
     }
 
@@ -85,8 +85,11 @@ public sealed class BoardRenderer
             var segment = snake.Segments[i];
             var isHead = i == 0;
             var ch = ChooseSegmentChar(snake.Direction, isHead, isSelected);
-            // Reverse-video the head when selected so the selection is unmistakable
-            // even on terminals where subtle color shifts are hard to see.
+            // Layer three orthogonal cues for the selection so at least one
+            // still reads even on terminals that ignore reverse video:
+            //   1) Head switches to an outlined arrow (shape).
+            //   2) Body switches from full to shaded block (texture).
+            //   3) Head gets reverse video on top (color swap).
             var reverse = isHead && isSelected;
             WriteCell(buffer, viewport, segment, ch, snake.Color, reverse);
         }
@@ -96,19 +99,28 @@ public sealed class BoardRenderer
     {
         if (isHead)
         {
-            return HeadChar(direction);
+            return HeadChar(direction, isSelected);
         }
         return isSelected ? SelectedBodyChar : BodyChar;
     }
 
-    private static char HeadChar(Direction direction) => direction switch
+    private static readonly IReadOnlyDictionary<Direction, (char Filled, char Outlined)> HeadCharByDirection =
+        new Dictionary<Direction, (char, char)>
+        {
+            [Direction.Up] = ('▲', '△'),
+            [Direction.Down] = ('▼', '▽'),
+            [Direction.Left] = ('◀', '◁'),
+            [Direction.Right] = ('▶', '▷'),
+        };
+
+    private static char HeadChar(Direction direction, bool isSelected)
     {
-        Direction.Up => '▲',
-        Direction.Down => '▼',
-        Direction.Left => '◀',
-        Direction.Right => '▶',
-        _ => throw new ArgumentOutOfRangeException(nameof(direction), direction, "Unknown direction"),
-    };
+        if (!HeadCharByDirection.TryGetValue(direction, out var chars))
+        {
+            throw new ArgumentOutOfRangeException(nameof(direction), direction, "Unknown direction");
+        }
+        return isSelected ? chars.Outlined : chars.Filled;
+    }
 
     private static void WriteCell(
         FrameBuffer buffer,
