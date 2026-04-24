@@ -12,7 +12,7 @@ public sealed class BoardGenerator
     public const int MaxBoardSize = 16;
     public const int AbsoluteMaxBoardSize = 64;
     public const int MaxSegmentLength = 120;
-    public const int DefaultSolvableAttempts = 300;
+    public const int DefaultSolvableAttempts = 120;
 
     // Hard cap on how many snakes a board can carry. There are 8 distinct
     // colours in SnakeColor and we cycle past that for very large boards,
@@ -112,12 +112,12 @@ public sealed class BoardGenerator
         {
             return null;
         }
-        // Greedy-only solvability check — BFS is prohibitively expensive
-        // on the 40+ wide boards level 100+ produces (6 GB / 4 s in the
-        // pre-change benchmark). Boards that only succeed via partial-
-        // move trickery are rare; rejecting them in generation is fine
-        // because the caller just retries with the next seed.
-        return Solver.TryGreedySolve(board) is null ? null : board;
+        // Solvability check: greedy first, then partial-move, then a
+        // time-budgeted BFS for the last holdouts. Partial-move lets
+        // the generator ship dense boards that require the player to
+        // move snake A a few cells so snake B can pass through — the
+        // whole point of issue #38.
+        return Solver.TrySolve(board) is null ? null : board;
     }
 
     /// <summary>
@@ -367,10 +367,11 @@ public sealed class BoardGenerator
         {
             var inner = Math.Max(1, boardSize - 2);
             var snakeCount = ComputeSnakeCount(levelIndex, inner);
-            // Push every snake to a solid chunk of the inner side, so
-            // even low-level puzzles on the full-terminal board don't
-            // look empty. Cap maxLen by the per-snake budget so the
-            // random walk + greedy solver can still fit everything.
+            // Issue #38 first pass: partial-move solver untangles denser
+            // boards than greedy-only could, but reliability still falls
+            // off a cliff past ~35-40 % coverage within the per-solve
+            // time budget. minLen / maxLen sized for a steady ~35 %
+            // density target.
             var minLen = Math.Clamp(
                 AbsoluteMinSnakeLength + levelIndex / 3,
                 Math.Max(AbsoluteMinSnakeLength, inner / 4),
@@ -378,9 +379,9 @@ public sealed class BoardGenerator
             var levelDriven = AbsoluteMinSnakeLength + levelIndex * 2;
             var sizeFloor = inner;
             var rawMax = Math.Max(levelDriven, sizeFloor);
-            // Per-snake cell budget to keep coverage around ~40% — the
-            // placement sweet spot where dense random-walk snakes
-            // almost always fit but the board still feels full.
+            // Cap per-snake length off the target coverage so the
+            // random-walk placement + partial-move solver can still
+            // find feasible, solvable boards.
             var perSnakeBudget = Math.Max(minLen + 1, (inner * inner * 2) / (5 * Math.Max(1, snakeCount)));
             var maxLen = Math.Clamp(
                 Math.Min(rawMax, perSnakeBudget),
@@ -391,11 +392,10 @@ public sealed class BoardGenerator
 
         private static int ComputeSnakeCount(int levelIndex, int inner)
         {
-            // Snake count scales with the inner side: ~inner/3 gives
-            // decent density without starving the random-walk placement
-            // of free cells. On a 50-wide board that's 16 snakes; with
-            // maxLen up to inner they approach ~45 % coverage. Higher
-            // counts run into solver fallbacks (#36 image review).
+            // Issue #38 first pass: stay at inner/3 while we iterate on
+            // the partial-move solver's speed — higher counts time out
+            // every attempt in the solver's per-call budget, which
+            // gives us a fallback board even with the async prefetch.
             var levelDriven = 3 + levelIndex / 3;
             var sizeFloor = inner / 3;
             var sizeCap = Math.Max(8, sizeFloor);

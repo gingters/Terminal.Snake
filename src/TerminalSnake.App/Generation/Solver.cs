@@ -26,16 +26,84 @@ public static class Solver
             return Array.Empty<int>();
         }
 
-        // Greedy covers every board where simply releasing the currently
-        // unblocked snake (and iterating) works — the overwhelming
-        // majority of procedurally generated boards. BFS stays available
-        // for the rare case where a snake has to partially move so
-        // another can pass through.
+        // Fast path first — most simple boards get released one snake at
+        // a time without needing any partial-move trickery. For the
+        // densely-packed boards issue #38 is about, the partial-move
+        // solver picks up the slack: it handles "advance A three cells
+        // so B's path opens up". BFS stays available behind the time
+        // budget for niche cases.
         if (TryGreedySolve(board) is { } greedy)
         {
             return greedy;
         }
+        if (TryPartialMoveSolve(board) is { } partial)
+        {
+            return partial;
+        }
         return BfsSolve(board, stateLimit, timeBudget ?? DefaultTimeBudget);
+    }
+
+    /// <summary>
+    /// Solves boards where simple "release one snake at a time" doesn't
+    /// work but partial moves can untangle the knot. Each iteration
+    /// picks the snake that advances the most cells (exits count as
+    /// ∞) and commits that move; repeats until every snake is out or
+    /// no snake can progress at all. Honours the supplied time budget
+    /// so the generator can call it ~100 times without burning seconds
+    /// on any single bad seed (#38).
+    /// </summary>
+    public static IReadOnlyList<int>? TryPartialMoveSolve(Board board, TimeSpan? timeBudget = null)
+    {
+        ArgumentNullException.ThrowIfNull(board);
+        return RunPartialMoveSolve(board, timeBudget ?? DefaultPartialMoveBudget);
+    }
+
+    private static readonly TimeSpan DefaultPartialMoveBudget = TimeSpan.FromMilliseconds(100);
+
+    private static IReadOnlyList<int>? RunPartialMoveSolve(Board start, TimeSpan budget)
+    {
+        var sw = Stopwatch.StartNew();
+        var current = start;
+        var sequence = new List<int>(start.Snakes.Length * 4);
+        var guard = (current.Snakes.Length + 1) * (current.Size + 2);
+        while (current.Snakes.Length > 0 && guard-- > 0)
+        {
+            if (sw.Elapsed > budget || !TryAdvanceAnySnake(ref current, sequence))
+            {
+                return null;
+            }
+        }
+        return current.Snakes.Length == 0 ? sequence : null;
+    }
+
+    private static bool TryAdvanceAnySnake(ref Board current, List<int> sequence)
+    {
+        var bestIndex = -1;
+        var bestSteps = 0;
+        Board? bestBoard = null;
+        for (var i = 0; i < current.Snakes.Length; i++)
+        {
+            var outcome = MoveEngine.Advance(current, i, captureFrames: false);
+            if (outcome.Exited)
+            {
+                sequence.Add(i);
+                current = outcome.ResultingBoard;
+                return true;
+            }
+            if (outcome.Steps > bestSteps)
+            {
+                bestIndex = i;
+                bestSteps = outcome.Steps;
+                bestBoard = outcome.ResultingBoard;
+            }
+        }
+        if (bestIndex < 0)
+        {
+            return false;
+        }
+        sequence.Add(bestIndex);
+        current = bestBoard!;
+        return true;
     }
 
     public static IReadOnlyList<int>? TryGreedySolve(Board board)
