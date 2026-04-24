@@ -48,17 +48,67 @@ public sealed class BoardGenerator
         }
 
         var profile = DifficultyProfile.For(levelIndex);
+        var requireChallenge = levelIndex >= 2;
         for (var attempt = 0; attempt < _solvableAttempts; attempt++)
         {
             var random = new Random(CombineSeed(seed, attempt));
-            var board = TryBuildBoard(random, profile);
-            if (board is not null && Solver.TrySolve(board) is not null)
+            var candidate = TryBuildAcceptableBoard(random, profile, requireChallenge);
+            if (candidate is not null)
             {
-                return board;
+                return candidate;
             }
         }
 
         return FallbackBoard(profile);
+    }
+
+    private static Board? TryBuildAcceptableBoard(Random random, DifficultyProfile profile, bool requireChallenge)
+    {
+        var board = TryBuildBoard(random, profile);
+        if (board is null)
+        {
+            return null;
+        }
+        if (requireChallenge && !HasInitiallyBlockedSnake(board))
+        {
+            return null;
+        }
+        return Solver.TrySolve(board) is null ? null : board;
+    }
+
+    /// <summary>
+    /// True if at least one snake cannot walk straight out of the field on
+    /// turn one because another snake's body sits in its forward path.
+    /// Rejecting boards where this is false avoids the "press Enter three
+    /// times, level done" flow reported in issue #14.
+    /// </summary>
+    private static bool HasInitiallyBlockedSnake(Board board)
+    {
+        foreach (var snake in board.Snakes)
+        {
+            if (IsForwardPathBlocked(board, snake))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool IsForwardPathBlocked(Board board, Snake snake)
+    {
+        var ownHead = snake.Head;
+        var delta = snake.Direction.Delta();
+        var cursor = ownHead + delta;
+        while (board.IsInside(cursor))
+        {
+            var occupant = board.OccupyingSnake(cursor);
+            if (occupant is int index && !ReferenceEquals(board.Snakes[index], snake))
+            {
+                return true;
+            }
+            cursor += delta;
+        }
+        return false;
     }
 
     private static int CombineSeed(int baseSeed, int attempt) =>

@@ -20,6 +20,7 @@ public sealed class GameEngine
 
     private Board _currentBoard;
     private Board? _pendingBoardAfterAnimation;
+    private int _preAnimationSnakeCount;
     private Queue<int> _demoQueue = new();
     private TimeSpan _lastDemoMoveAt = TimeSpan.Zero;
 
@@ -215,18 +216,40 @@ public sealed class GameEngine
         {
             return;
         }
+        _preAnimationSnakeCount = _currentBoard.Snakes.Length;
         _pendingBoardAfterAnimation = outcome.ResultingBoard;
         _animation.Start(snakeIndex, outcome.Frames, now);
     }
 
     private void FinalizeAnimation()
     {
-        if (_pendingBoardAfterAnimation is not null)
-        {
-            _currentBoard = _pendingBoardAfterAnimation;
-            _pendingBoardAfterAnimation = null;
-        }
+        var snakeExited = CommitPendingBoard();
         _animation.Clear();
+        UpdateSelectionAfterFinalize(snakeExited);
+    }
+
+    private bool CommitPendingBoard()
+    {
+        if (_pendingBoardAfterAnimation is null)
+        {
+            return false;
+        }
+        var exited = _pendingBoardAfterAnimation.Snakes.Length < _preAnimationSnakeCount;
+        _currentBoard = _pendingBoardAfterAnimation;
+        _pendingBoardAfterAnimation = null;
+        return exited;
+    }
+
+    private void UpdateSelectionAfterFinalize(bool snakeExited)
+    {
+        if (snakeExited)
+        {
+            // Clear the selection after an exit so the player actively picks
+            // the next snake instead of hitting Enter until the board empties
+            // — see issue #14.
+            SelectedSnakeIndex = null;
+            return;
+        }
         if (SelectedSnakeIndex is int selected && selected >= _currentBoard.Snakes.Length)
         {
             SelectedSnakeIndex = _currentBoard.Snakes.Length > 0 ? 0 : null;
