@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/TerminalSnake.Benchmarks/TerminalSnake.Benchmarks.csproj" />
+  </Folder>
   <Folder Name="/scripts/">
     <Project Path="scripts/QualityGateCheck/QualityGateCheck.csproj" />
   </Folder>

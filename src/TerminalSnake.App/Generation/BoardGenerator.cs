@@ -97,7 +97,12 @@ public sealed class BoardGenerator
         {
             return null;
         }
-        return Solver.TrySolve(board) is null ? null : board;
+        // Greedy-only solvability check — BFS is prohibitively expensive
+        // on the 40-wide boards level 100+ produces (6 GB / 4 s in the
+        // pre-change benchmark). Boards that only succeed via partial-
+        // move trickery are rare; rejecting them in generation is fine
+        // because the caller just retries with the next seed.
+        return Solver.TryGreedySolve(board) is null ? null : board;
     }
 
     /// <summary>
@@ -185,26 +190,48 @@ public sealed class BoardGenerator
     private static (Cell Head, Cell Second)? PickSeedPair(
         Random random, int size, HashSet<Cell> occupied)
     {
-        // Head and second are drawn from the inner region [1, size-2] so
-        // every snake ends up at least one cell away from the border
-        // before the random walk even starts (issue #36).
+        // Head is biased toward the snake's exit border so the forward
+        // ray it needs to traverse to leave the board is short — without
+        // that bias, on a 40-wide board every snake's head-to-border ray
+        // has a ~99.9 % chance of crossing another snake and the
+        // greedy solver fails on every seed (issue #36).
         var innerMax = size - 2;
         if (innerMax < 1)
         {
             return null;
         }
-        var head = new Cell(1 + random.Next(innerMax), 1 + random.Next(innerMax));
+        var direction = AllDirections[random.Next(AllDirections.Length)];
+        var head = PickHeadNearExitBorder(random, size, direction);
         if (occupied.Contains(head))
         {
             return null;
         }
-        var direction = AllDirections[random.Next(AllDirections.Length)];
         var second = head + direction.Opposite().Delta();
         if (!IsInnerCell(second, size) || occupied.Contains(second))
         {
             return null;
         }
         return (head, second);
+    }
+
+    private static Cell PickHeadNearExitBorder(Random random, int size, Direction direction)
+    {
+        // Leave the head within the last HeadExitZone cells of the inner
+        // region in the snake's exit direction; the body grows backward
+        // through the rest of the board via the random walk.
+        const int HeadExitZone = 4;
+        var innerMax = size - 2;
+        var band = Math.Min(HeadExitZone, innerMax);
+        var front = 1 + innerMax - band + random.Next(band);
+        var back = 1 + random.Next(innerMax);
+        return direction switch
+        {
+            Direction.Right => new Cell(front, back),
+            Direction.Left => new Cell(size - 1 - front, back),
+            Direction.Down => new Cell(back, front),
+            Direction.Up => new Cell(back, size - 1 - front),
+            _ => new Cell(back, back),
+        };
     }
 
     private static bool IsInnerCell(Cell cell, int size) =>
@@ -296,10 +323,11 @@ public sealed class BoardGenerator
                 AbsoluteMinSnakeLength,
                 Math.Max(AbsoluteMinSnakeLength, inner));
             var legacyMax = AbsoluteMinSnakeLength + levelIndex;
-            // Cap snake length at 1.5 × inner so the longest snakes on a
-            // huge board can snake halfway around without leaving the
-            // generator stuck in a 40%+ density placement problem.
-            var sizeCap = Math.Max(minLen + 1, inner + inner / 2);
+            // Cap snake length at ~inner so the random-walk placement
+            // doesn't get stuck chasing its tail: total coverage stays
+            // around 30 % (snakeCount × maxLen ÷ inner²), which the
+            // generator can reliably satisfy.
+            var sizeCap = Math.Max(minLen + 1, inner);
             var maxLen = Math.Clamp(
                 Math.Min(legacyMax, sizeCap),
                 AbsoluteMinSnakeLength + 1,
@@ -310,13 +338,15 @@ public sealed class BoardGenerator
         private static int ComputeSnakeCount(int levelIndex, int inner)
         {
             // Legacy tutorial pacing for small boards (8 snakes at level
-            // 15 on a 16-grid). The size-floor / size-cap only kick in
-            // once the board is big enough to need it — capping at
-            // inner/4 keeps roughly 30-40 % density at maxLen, which is
-            // what the random-walk placement can reliably satisfy.
+            // 15 on a 16-grid). The size-driven cap kicks in on bigger
+            // boards — keep roughly half the inner side's worth of snakes
+            // so the density stays close to the old 16-grid layout and
+            // the HasInitiallyBlockedSnake challenge check is actually
+            // satisfiable (at low density every head points straight out
+            // at empty space and the generator rejects every seed).
             var levelDriven = 3 + levelIndex / 3;
-            var sizeFloor = inner / 4;
-            var sizeCap = Math.Max(8, inner / 4);
+            var sizeFloor = inner / 3;
+            var sizeCap = Math.Max(8, inner / 3);
             return Math.Clamp(
                 Math.Max(levelDriven, sizeFloor),
                 3,

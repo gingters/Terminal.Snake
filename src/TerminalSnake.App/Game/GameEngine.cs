@@ -491,17 +491,15 @@ public sealed class GameEngine
 
     private void UpdateSelectionAfterFinalize(bool snakeExited)
     {
+        // Clear the selection after an exit so the player actively picks
+        // the next snake instead of hitting Enter until the board empties
+        // — see issue #14. Otherwise leave the selection pointing at its
+        // current snake; Board.Snakes only grows (via restart / jump) or
+        // shrinks on exit, which is already the branch above, so no
+        // out-of-range clamp is needed here.
         if (snakeExited)
         {
-            // Clear the selection after an exit so the player actively picks
-            // the next snake instead of hitting Enter until the board empties
-            // — see issue #14.
             SelectedSnakeIndex = null;
-            return;
-        }
-        if (SelectedSnakeIndex is int selected && selected >= _currentBoard.Snakes.Length)
-        {
-            SelectedSnakeIndex = _currentBoard.Snakes.Length > 0 ? 0 : null;
         }
     }
 

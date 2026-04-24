@@ -90,8 +90,10 @@ public sealed class SolverTests
     }
 
     [Fact]
-    public void Solver_returns_null_when_state_limit_is_tiny()
+    public void Greedy_solve_finds_a_straight_order_release_sequence()
     {
+        // Four independent snakes all heading right — greedy can release
+        // each one in turn without needing the BFS fallback.
         var snakes = new[]
         {
             Snake(SnakeColor.Red,    (2, 0), (1, 0)),
@@ -101,8 +103,24 @@ public sealed class SolverTests
         };
         var board = new Board(6, snakes);
 
-        var solution = Solver.TrySolve(board, stateLimit: 1);
-        Assert.Null(solution);
+        var solution = Solver.TryGreedySolve(board);
+        Assert.NotNull(solution);
+        Assert.Equal(snakes.Length, solution.Count);
+    }
+
+    [Fact]
+    public void Greedy_solve_returns_null_on_a_fully_blocked_board()
+    {
+        // Two snakes pointing at each other — neither can fully exit, so
+        // the cheap greedy pass can't untangle them.
+        var snakes = new[]
+        {
+            Snake(SnakeColor.Red,  (2, 2), (1, 2)),
+            Snake(SnakeColor.Cyan, (3, 2), (4, 2)),
+        };
+        var board = new Board(6, snakes);
+
+        Assert.Null(Solver.TryGreedySolve(board));
     }
 
     [Fact]
