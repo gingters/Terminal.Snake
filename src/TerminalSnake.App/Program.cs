@@ -71,13 +71,17 @@ internal static class Program
             {
                 while (!cts.IsCancellationRequested)
                 {
-                    // Rebuild the viewport every tick so level-ups (which
-                    // change Board.Size) never feed a stale BoardSide into
-                    // BoardRenderer.Render — issue #7.
-                    viewport = engine.BuildViewport(Console.WindowWidth, Console.WindowHeight);
-                    DrainEvents(events.Reader, engine, viewport, stopwatch.Elapsed, cts);
+                    // Input translation (click → board cell) needs the viewport
+                    // matching what the player currently sees, i.e. the board
+                    // BEFORE Tick. Render needs the viewport matching the
+                    // board AFTER Tick, which may have transitioned to the
+                    // next level (different Board.Size). Build a fresh
+                    // viewport for each phase.
+                    var inputViewport = engine.BuildViewport(Console.WindowWidth, Console.WindowHeight);
+                    DrainEvents(events.Reader, engine, inputViewport, stopwatch.Elapsed, cts);
                     engine.Tick(stopwatch.Elapsed);
-                    view.Update(engine.Render(viewport, stopwatch.Elapsed));
+                    var renderViewport = engine.BuildViewport(Console.WindowWidth, Console.WindowHeight);
+                    view.Update(engine.Render(renderViewport, stopwatch.Elapsed));
                     ctx.Refresh();
                     Thread.Sleep(16);
                 }
