@@ -45,10 +45,11 @@ public sealed class HudRenderer
         // Split the legend across the two padding rows that frame the
         // board — the full text does not fit on narrower terminals and
         // would get clipped mid-item otherwise. Top padding's second row
-        // carries the selection + release shortcuts; the row just above
-        // "Press H for help" carries the remaining three.
+        // carries the selection + release shortcuts plus the level jump;
+        // the row just above "Press H for help" carries the remaining
+        // utility keys.
         var strings = model.Strings;
-        var selectionReleaseLine = $"{strings.HelpTab}   {strings.HelpEnter}";
+        var selectionReleaseLine = $"{strings.HelpTab}   {strings.HelpEnter}   {strings.HelpLevels}";
         var utilityLine = $"{strings.HelpR}   {strings.HelpH}   {strings.HelpD}   {strings.HelpQ}";
         WriteText(buffer, x: 1, y: viewport.TopHudRow + 1, selectionReleaseLine);
         WriteText(buffer, x: 1, y: viewport.BottomHudRow - 1, utilityLine);

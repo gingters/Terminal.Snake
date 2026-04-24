@@ -253,7 +253,40 @@ public sealed class GameEngine
         if (key.Key == ConsoleKey.R)
         {
             RestartLevel();
+            return;
         }
+        if (TryMapDigitToLevel(key.Key) is int jumpLevel)
+        {
+            JumpToLevel(jumpLevel);
+        }
+    }
+
+    // Digit keys 1..9 jump to the matching tutorial level, 0 jumps to
+    // level 10 — the end of the handcrafted levels, which is also the
+    // jumping-off point into the procedural generator. Lets the player
+    // skip the easy intro levels when they just want harder puzzles
+    // (#25). Returns null for any non-digit key.
+    private static int? TryMapDigitToLevel(ConsoleKey key)
+    {
+        if (key >= ConsoleKey.D1 && key <= ConsoleKey.D9)
+        {
+            return key - ConsoleKey.D0;
+        }
+        if (key == ConsoleKey.D0)
+        {
+            return 10;
+        }
+        return null;
+    }
+
+    private void JumpToLevel(int levelIndex)
+    {
+        LevelIndex = levelIndex;
+        _currentBoard = _levels.LoadLevel(levelIndex);
+        _pendingBoardAfterAnimation = null;
+        _animation.Clear();
+        _demoQueue.Clear();
+        SelectedSnakeIndex = null;
     }
 
     private static Direction? TryMapArrowToDirection(ConsoleKey key) => key switch
