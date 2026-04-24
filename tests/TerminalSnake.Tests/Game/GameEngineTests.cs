@@ -437,6 +437,58 @@ public sealed class GameEngineTests
     }
 
     [Fact]
+    public void Other_snakes_are_never_rendered_as_selected_during_an_exit_animation()
+    {
+        // Issue #29: when the selected snake exits, the animation's final
+        // frames trim it from the rendered board so remaining snakes shift
+        // down an index. Without the fix the renderer would briefly match
+        // the now-vacated selection index against whichever snake slid into
+        // that slot, highlighting the wrong snake for a frame or two before
+        // FinalizeAnimation cleared the selection. That shows as a flicker.
+        var engine = CreateEngine(animationStep: TimeSpan.FromMilliseconds(5));
+        Assert.True(engine.Board.Snakes.Length >= 2);
+
+        // Snapshot every other snake's body-cell positions — those cells
+        // never move during an animation of a different snake, so any ▓
+        // (SelectedBodyChar) appearing there must be a mis-highlight.
+        var otherCells = new List<(int X, int Y)>();
+        var animatedIndex = 0;
+        for (var i = 0; i < engine.Board.Snakes.Length; i++)
+        {
+            if (i == animatedIndex)
+            {
+                continue;
+            }
+            var snake = engine.Board.Snakes[i];
+            for (var s = 1; s < snake.Segments.Length; s++)
+            {
+                otherCells.Add((snake.Segments[s].X, snake.Segments[s].Y));
+            }
+        }
+
+        var head = engine.Board.Snakes[animatedIndex].Head;
+        engine.HandleBoardClick(head.X, head.Y, TimeSpan.Zero);
+
+        var viewport = engine.BuildViewport(200, 80);
+        for (var ms = 0; ms <= 1_500; ms += 2)
+        {
+            var now = TimeSpan.FromMilliseconds(ms);
+            engine.Tick(now);
+            var buffer = engine.Render(viewport, now);
+            foreach (var cell in otherCells)
+            {
+                var bx = viewport.BoardOriginX + cell.X * ViewportCalculator.CellCharWidth;
+                var by = viewport.BoardOriginY + cell.Y * ViewportCalculator.CellCharHeight;
+                Assert.NotEqual(BoardRenderer.SelectedBodyChar, buffer[bx, by].Char);
+            }
+            if (!engine.IsAnimating)
+            {
+                break;
+            }
+        }
+    }
+
+    [Fact]
     public void Selection_clears_after_a_snake_exits_so_enter_cannot_chain_removals()
     {
         // Issue #14: the engine used to leave SelectedSnakeIndex pointing at
