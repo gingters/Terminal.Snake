@@ -41,3 +41,4 @@ packages/
 
 # Generated docs
 docs/_site/
+BenchmarkDotNet.Artifacts/
