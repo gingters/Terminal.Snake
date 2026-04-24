@@ -235,30 +235,55 @@ public sealed class GameEngine
 
     private void DispatchGameplayKey(KeyEvent key, TimeSpan now)
     {
+        if (TryHandleSelectionKey(key))
+        {
+            return;
+        }
+        if (TryHandleActivationKey(key, now))
+        {
+            return;
+        }
+        TryHandleLevelControlKey(key);
+    }
+
+    private bool TryHandleSelectionKey(KeyEvent key)
+    {
         if (key.Key == ConsoleKey.Tab)
         {
             CycleSelection(key.Shift ? -1 : +1);
-            return;
+            return true;
         }
         if (TryMapArrowToDirection(key.Key) is Direction direction)
         {
             SelectNearestSnakeInDirection(direction);
-            return;
+            return true;
         }
+        return false;
+    }
+
+    private bool TryHandleActivationKey(KeyEvent key, TimeSpan now)
+    {
         if (IsTriggerKey(key.Key))
         {
             TriggerSelectedSnake(now);
-            return;
+            return true;
         }
+        return false;
+    }
+
+    private bool TryHandleLevelControlKey(KeyEvent key)
+    {
         if (key.Key == ConsoleKey.R)
         {
             RestartLevel();
-            return;
+            return true;
         }
         if (TryMapDigitToLevel(key.Key) is int jumpLevel)
         {
             JumpToLevel(jumpLevel);
+            return true;
         }
+        return false;
     }
 
     // Digit keys 1..9 jump to the matching tutorial level, 0 jumps to
