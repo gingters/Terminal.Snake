@@ -31,7 +31,15 @@ public sealed class BoardView : Renderable
             {
                 yield return segment;
             }
-            yield return Segment.LineBreak;
+            // Emit a line break BETWEEN rows only, never after the last one. A
+            // trailing line break pushes the cursor past the last visible row
+            // and, when the renderable fills the terminal vertically, makes the
+            // underlying buffer scroll by one row every refresh — which is the
+            // visible "jump" reported in issue #2.
+            if (y < _buffer.Height - 1)
+            {
+                yield return Segment.LineBreak;
+            }
         }
     }
 

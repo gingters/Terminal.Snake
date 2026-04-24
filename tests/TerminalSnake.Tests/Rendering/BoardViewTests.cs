@@ -52,4 +52,27 @@ public sealed class BoardViewTests
         Assert.Contains("B", output);
         Assert.Contains("C", output);
     }
+
+    [Fact]
+    public void Rendering_emits_line_breaks_only_between_rows_not_after_the_last()
+    {
+        // A trailing line break on the final row would push the cursor past
+        // the visible area and scroll the terminal buffer on each refresh —
+        // that was the visible "jump" on redraw reported in issue #2.
+        var buffer = new FrameBuffer(3, 4);
+        var view = new BoardView(buffer);
+        var writer = new StringWriter();
+        var console = AnsiConsole.Create(new AnsiConsoleSettings
+        {
+            Ansi = AnsiSupport.No,
+            ColorSystem = ColorSystemSupport.NoColors,
+            Out = new AnsiConsoleOutput(writer),
+        });
+        console.Write(view);
+        var output = writer.ToString();
+
+        // Height 4 rows → 3 line breaks between them, none after the last.
+        var newlines = output.Count(c => c == '\n');
+        Assert.Equal(buffer.Height - 1, newlines);
+    }
 }
