@@ -135,6 +135,34 @@ public sealed class InputDecoderTests
         Assert.Equal(expected, click.Button);
     }
 
+    [Theory]
+    [InlineData('A', ConsoleKey.UpArrow)]
+    [InlineData('B', ConsoleKey.DownArrow)]
+    [InlineData('C', ConsoleKey.RightArrow)]
+    [InlineData('D', ConsoleKey.LeftArrow)]
+    public void Application_keypad_arrow_sequences_parse_correctly(char finalChar, ConsoleKey expected)
+    {
+        // Terminals that have "application cursor keys" enabled (DECCKM on)
+        // send ESC O X instead of ESC [ X for the arrow keys. Before the
+        // fix for issue #18 the decoder interpreted that as a bare Escape
+        // followed by stray letters, which in turn closed the app via the
+        // Q / Escape quit path.
+        var buffer = new[] { (byte)0x1B, (byte)'O', (byte)finalChar };
+        var consumed = InputDecoder.TryDecode(buffer, out var evt);
+        Assert.Equal(3, consumed);
+        var key = Assert.IsType<KeyEvent>(evt);
+        Assert.Equal(expected, key.Key);
+    }
+
+    [Fact]
+    public void Incomplete_ss3_sequence_consumes_nothing()
+    {
+        var buffer = new[] { (byte)0x1B, (byte)'O' };
+        var consumed = InputDecoder.TryDecode(buffer, out var evt);
+        Assert.Equal(0, consumed);
+        Assert.Null(evt);
+    }
+
     [Fact]
     public void Non_standard_escape_prefix_treated_as_escape_key()
     {

@@ -6,6 +6,7 @@ public static class InputDecoder
 {
     private const byte Esc = 0x1B;
     private const byte Csi = (byte)'[';
+    private const byte Ss3 = (byte)'O';
     private const byte Sgr = (byte)'<';
 
     public static int TryDecode(ReadOnlySpan<byte> buffer, out InputEvent? decoded, bool inputFlushed = false)
@@ -29,11 +30,16 @@ public static class InputDecoder
         {
             return TryEmitBareEscape(inputFlushed, out decoded);
         }
-        if (buffer[1] != Csi)
+        return buffer[1] switch
         {
-            decoded = new KeyEvent(ConsoleKey.Escape);
-            return 1;
-        }
+            Csi => DecodeCsiOrWait(buffer, out decoded),
+            Ss3 => DecodeSs3OrWait(buffer, out decoded),
+            _ => EmitBareEscape(out decoded),
+        };
+    }
+
+    private static int DecodeCsiOrWait(ReadOnlySpan<byte> buffer, out InputEvent? decoded)
+    {
         if (buffer.Length == 2)
         {
             decoded = null;
@@ -41,6 +47,36 @@ public static class InputDecoder
         }
         return DecodeCsiSequence(buffer, out decoded);
     }
+
+    private static int DecodeSs3OrWait(ReadOnlySpan<byte> buffer, out InputEvent? decoded)
+    {
+        // SS3 is the "application cursor keys" form many terminals emit for
+        // the arrow keys (ESC O A/B/C/D). Treating them as ESC + letter
+        // collapses to a "Q quit" miss-route that closed the whole app on
+        // the first arrow press — see issue #18.
+        if (buffer.Length == 2)
+        {
+            decoded = null;
+            return 0;
+        }
+        decoded = DecodeSs3Final(buffer[2]);
+        return 3;
+    }
+
+    private static int EmitBareEscape(out InputEvent? decoded)
+    {
+        decoded = new KeyEvent(ConsoleKey.Escape);
+        return 1;
+    }
+
+    private static InputEvent? DecodeSs3Final(byte value) => value switch
+    {
+        (byte)'A' => new KeyEvent(ConsoleKey.UpArrow),
+        (byte)'B' => new KeyEvent(ConsoleKey.DownArrow),
+        (byte)'C' => new KeyEvent(ConsoleKey.RightArrow),
+        (byte)'D' => new KeyEvent(ConsoleKey.LeftArrow),
+        _ => null,
+    };
 
     private static int TryEmitBareEscape(bool inputFlushed, out InputEvent? decoded)
     {
