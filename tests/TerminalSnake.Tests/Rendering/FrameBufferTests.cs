@@ -63,4 +63,20 @@ public sealed class FrameBufferTests
         Assert.Equal("...\n...", buffer.Snapshot());
         Assert.Equal(SnakeColor.Green, buffer[1, 1].Foreground);
     }
+
+    [Fact]
+    public void Set_stores_reverse_flag()
+    {
+        var buffer = new FrameBuffer(3, 3);
+        buffer.Set(1, 1, 'X', SnakeColor.Red, reverse: true);
+        Assert.True(buffer[1, 1].Reverse);
+    }
+
+    [Fact]
+    public void Default_glyph_is_not_reversed()
+    {
+        var buffer = new FrameBuffer(3, 3);
+        buffer.Set(0, 0, 'A', SnakeColor.Red);
+        Assert.False(buffer[0, 0].Reverse);
+    }
 }

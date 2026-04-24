@@ -11,6 +11,7 @@ public sealed class BoardRenderer
     public const char BorderCornerBottomLeft = '└';
     public const char BorderCornerBottomRight = '┘';
     public const char BodyChar = '█';
+    public const char SelectedBodyChar = '▓';
     public const char EmptyChar = ' ';
 
     public void Render(
@@ -79,13 +80,25 @@ public sealed class BoardRenderer
 
     private static void DrawSnake(FrameBuffer buffer, Snake snake, Viewport viewport, bool isSelected)
     {
-        var backgroundWhenSelected = isSelected ? (SnakeColor?)snake.Color : null;
         for (var i = 0; i < snake.Segments.Length; i++)
         {
             var segment = snake.Segments[i];
-            var ch = i == 0 ? HeadChar(snake.Direction) : BodyChar;
-            WriteCell(buffer, viewport, segment, ch, snake.Color, backgroundWhenSelected);
+            var isHead = i == 0;
+            var ch = ChooseSegmentChar(snake.Direction, isHead, isSelected);
+            // Reverse-video the head when selected so the selection is unmistakable
+            // even on terminals where subtle color shifts are hard to see.
+            var reverse = isHead && isSelected;
+            WriteCell(buffer, viewport, segment, ch, snake.Color, reverse);
         }
+    }
+
+    private static char ChooseSegmentChar(Direction direction, bool isHead, bool isSelected)
+    {
+        if (isHead)
+        {
+            return HeadChar(direction);
+        }
+        return isSelected ? SelectedBodyChar : BodyChar;
     }
 
     private static char HeadChar(Direction direction) => direction switch
@@ -103,13 +116,13 @@ public sealed class BoardRenderer
         Cell segment,
         char ch,
         SnakeColor foreground,
-        SnakeColor? background)
+        bool reverse)
     {
         var baseX = viewport.BoardOriginX + segment.X * ViewportCalculator.CellCharWidth;
         var baseY = viewport.BoardOriginY + segment.Y * ViewportCalculator.CellCharHeight;
         for (var dx = 0; dx < ViewportCalculator.CellCharWidth; dx++)
         {
-            buffer.Set(baseX + dx, baseY, ch, foreground, background);
+            buffer.Set(baseX + dx, baseY, ch, foreground, background: null, reverse: reverse);
         }
     }
 }

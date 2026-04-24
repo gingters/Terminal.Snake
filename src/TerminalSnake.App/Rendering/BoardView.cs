@@ -40,7 +40,7 @@ public sealed class BoardView : Renderable
         for (var x = 0; x < _buffer.Width; x++)
         {
             var glyph = _buffer[x, y];
-            var style = Theme.BuildStyle(glyph.Foreground, glyph.Background);
+            var style = Theme.BuildStyle(glyph.Foreground, glyph.Background, glyph.Reverse);
             yield return new Segment(glyph.Char.ToString(), style);
         }
     }
