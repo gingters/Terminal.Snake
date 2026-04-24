@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using TerminalSnake.Domain;
 
 namespace TerminalSnake.Rendering;
@@ -18,8 +19,23 @@ public sealed class BoardRenderer
     public const char BoardBorderCornerTopRight = '╗';
     public const char BoardBorderCornerBottomLeft = '╚';
     public const char BoardBorderCornerBottomRight = '╝';
+    // Double-line box-drawing glyphs paint the snake body as a wide pipe
+    // (issue #27). Filling both chars of every 2-char cell — verticals
+    // included — gives the body real thickness (two parallel strokes for
+    // vertical runs, a solid double rail for horizontals) without going
+    // back to an opaque block. Corners pair the turn char with a matching
+    // horizontal filler so the spine reaches across to its neighbour.
+    public const char BodyHorizontal = '═';
+    public const char BodyVertical = '║';
+    public const char BodyTurnUpRight = '╚';
+    public const char BodyTurnUpLeft = '╝';
+    public const char BodyTurnDownRight = '╔';
+    public const char BodyTurnDownLeft = '╗';
+    // BodyChar is still used to paint orphan overlay cells (the single-cell
+    // tail left behind by an exit animation, for example) — those cells have
+    // no neighbours to derive a spine shape from, so a plain block is the
+    // pragmatic fallback.
     public const char BodyChar = '█';
-    public const char SelectedBodyChar = '▓';
     public const char EmptyChar = ' ';
 
     public void Render(
@@ -94,7 +110,7 @@ public sealed class BoardRenderer
         }
         foreach (var entry in overlay)
         {
-            WriteCell(buffer, viewport, entry.Key, BodyChar, entry.Value, reverse: false);
+            WriteCell(buffer, viewport, entry.Key, BodyChar, BodyChar, entry.Value, reverse: false);
         }
     }
 
@@ -128,34 +144,94 @@ public sealed class BoardRenderer
         for (var i = 0; i < snake.Segments.Length; i++)
         {
             var segment = snake.Segments[i];
-            var isHead = i == 0;
-            var ch = ChooseSegmentChar(snake.Direction, isHead, isSelected);
-            // Layer three orthogonal cues for the selection so at least one
-            // still reads even on terminals that ignore reverse video:
-            //   1) Head switches to an outlined arrow (shape).
-            //   2) Body switches from full to shaded block (texture).
-            //   3) Head gets reverse video on top (color swap).
-            var reverse = isHead && isSelected;
-            WriteCell(buffer, viewport, segment, ch, snake.Color, reverse);
+            var (left, right) = ChooseSegmentChars(snake, i, isSelected);
+            // Reverse video covers every cell of the selected snake (both
+            // the arrow head and the spine body), which flips fg/bg so the
+            // whole snake renders as a solid colour pipe against the
+            // board instead of a same-coloured line. The shape is still
+            // readable because we keep the spine glyphs underneath — the
+            // bend structure stays visible through the inverted fill.
+            WriteCell(buffer, viewport, segment, left, right, snake.Color, reverse: isSelected);
         }
     }
 
-    private static char ChooseSegmentChar(Direction direction, bool isHead, bool isSelected)
+    private static (char Left, char Right) ChooseSegmentChars(Snake snake, int index, bool isSelected)
     {
-        if (isHead)
+        if (index == 0)
         {
-            return HeadChar(direction, isSelected);
+            var head = HeadChar(snake.Direction, isSelected);
+            return (head, head);
         }
-        return isSelected ? SelectedBodyChar : BodyChar;
+        var (toPrev, toNext) = ConnectionsAt(snake.Segments, index);
+        return SpineShapes.TryGetValue((toPrev, toNext), out var shape) ? shape : (BodyChar, BodyChar);
     }
 
+    private static (Direction? ToPrev, Direction? ToNext) ConnectionsAt(
+        ImmutableArray<Cell> segments, int index)
+    {
+        var here = segments[index];
+        Direction? toPrev = index > 0 ? DirectionExtensions.FromDelta(here, segments[index - 1]) : null;
+        Direction? toNext = index < segments.Length - 1
+            ? DirectionExtensions.FromDelta(here, segments[index + 1])
+            : null;
+        return (toPrev, toNext);
+    }
+
+    // Connection-pair → (col 0, col 1) glyphs. The column-0 glyph carries
+    // the actual spine; column 1 is the deliberate gap that makes each
+    // segment visible as a distinct bead. Turns that continue the spine
+    // rightward (┗ ┏) fill column 1 with the horizontal stroke too so the
+    // line inside the cell reaches the right-hand neighbour; left-handed
+    // turns and pure verticals leave column 1 blank.
+    private static readonly IReadOnlyDictionary<(Direction? ToPrev, Direction? ToNext), (char Left, char Right)>
+        SpineShapes = new Dictionary<(Direction?, Direction?), (char, char)>
+        {
+            // Horizontal runs fill both chars for a solid double rail (══).
+            // Vertical runs use a single ║ glyph (which itself draws two
+            // parallel rails); col 1 stays blank because the double-line
+            // corner glyphs only emit one-char-wide down/up legs, and
+            // filling col 1 with another ║ would leave that rail dangling
+            // above a turn's filler column.
+            [(Direction.Up, Direction.Down)] = (BodyVertical, EmptyChar),
+            [(Direction.Down, Direction.Up)] = (BodyVertical, EmptyChar),
+            [(Direction.Left, Direction.Right)] = (BodyHorizontal, BodyHorizontal),
+            [(Direction.Right, Direction.Left)] = (BodyHorizontal, BodyHorizontal),
+
+            // Left-handed turns put the corner in col 0 (═╗ / ═╝ read
+            // right-to-left through the cell when entering from the left,
+            // but column-wise the corner glyph itself sits at col 0 so
+            // that its down/up leg lines up with the vertical body's
+            // col-0 ║ on the other side of the bend).
+            [(Direction.Left, Direction.Up)] = (BodyTurnUpLeft, EmptyChar),
+            [(Direction.Up, Direction.Left)] = (BodyTurnUpLeft, EmptyChar),
+            [(Direction.Left, Direction.Down)] = (BodyTurnDownLeft, EmptyChar),
+            [(Direction.Down, Direction.Left)] = (BodyTurnDownLeft, EmptyChar),
+
+            // Right-handed turns put the corner in col 0 with a horizontal
+            // filler in col 1 so the spine reaches forward to the horizontal
+            // neighbour on the right (╔═ / ╚═).
+            [(Direction.Right, Direction.Up)] = (BodyTurnUpRight, BodyHorizontal),
+            [(Direction.Up, Direction.Right)] = (BodyTurnUpRight, BodyHorizontal),
+            [(Direction.Right, Direction.Down)] = (BodyTurnDownRight, BodyHorizontal),
+            [(Direction.Down, Direction.Right)] = (BodyTurnDownRight, BodyHorizontal),
+
+            // Tails reuse the straight-run glyphs so they blend into the
+            // body; the player reads direction from the head arrow.
+            [(Direction.Left, null)] = (BodyHorizontal, BodyHorizontal),
+            [(Direction.Right, null)] = (BodyHorizontal, BodyHorizontal),
+            [(Direction.Up, null)] = (BodyVertical, EmptyChar),
+            [(Direction.Down, null)] = (BodyVertical, EmptyChar),
+        };
+
+    // CP437-style pointer heads (► ◄ ▲ ▼) with matching white-pointer
+    // outlines for the selection highlight — user call-out on issue #27.
     private static readonly IReadOnlyDictionary<Direction, (char Filled, char Outlined)> HeadCharByDirection =
         new Dictionary<Direction, (char, char)>
         {
             [Direction.Up] = ('▲', '△'),
             [Direction.Down] = ('▼', '▽'),
-            [Direction.Left] = ('◀', '◁'),
-            [Direction.Right] = ('▶', '▷'),
+            [Direction.Left] = ('◄', '◅'),
+            [Direction.Right] = ('►', '▻'),
         };
 
     private static char HeadChar(Direction direction, bool isSelected)
@@ -171,15 +247,14 @@ public sealed class BoardRenderer
         FrameBuffer buffer,
         Viewport viewport,
         Cell segment,
-        char ch,
+        char chLeft,
+        char chRight,
         SnakeColor foreground,
         bool reverse)
     {
         var baseX = viewport.BoardOriginX + segment.X * ViewportCalculator.CellCharWidth;
         var baseY = viewport.BoardOriginY + segment.Y * ViewportCalculator.CellCharHeight;
-        for (var dx = 0; dx < ViewportCalculator.CellCharWidth; dx++)
-        {
-            buffer.Set(baseX + dx, baseY, ch, foreground, background: null, reverse: reverse);
-        }
+        buffer.Set(baseX, baseY, chLeft, foreground, background: null, reverse: reverse);
+        buffer.Set(baseX + 1, baseY, chRight, foreground, background: null, reverse: reverse);
     }
 }
