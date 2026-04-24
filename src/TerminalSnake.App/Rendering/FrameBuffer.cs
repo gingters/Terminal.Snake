@@ -50,10 +50,14 @@ public sealed class FrameBuffer
         }
     }
 
-    public void Set(int x, int y, char ch, SnakeColor? foreground = null, SnakeColor? background = null)
+    public void Set(
+        int x, int y, char ch,
+        SnakeColor? foreground = null,
+        SnakeColor? background = null,
+        bool reverse = false)
     {
         EnsureInside(x, y);
-        _glyphs[x, y] = new Glyph(ch, foreground, background);
+        _glyphs[x, y] = new Glyph(ch, foreground, background, reverse);
     }
 
     public void DrawHorizontalLine(int x, int y, int length, char ch)
@@ -98,5 +102,9 @@ public sealed class FrameBuffer
         }
     }
 
-    public readonly record struct Glyph(char Char, SnakeColor? Foreground, SnakeColor? Background);
+    public readonly record struct Glyph(
+        char Char,
+        SnakeColor? Foreground,
+        SnakeColor? Background,
+        bool Reverse = false);
 }

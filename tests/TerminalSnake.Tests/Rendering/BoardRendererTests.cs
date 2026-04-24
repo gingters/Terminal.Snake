@@ -59,9 +59,9 @@ public sealed class BoardRendererTests
     }
 
     [Fact]
-    public void Selected_snake_uses_background_highlight()
+    public void Selected_snake_head_uses_reverse_video_and_body_uses_shaded_block()
     {
-        var snake = Snake(SnakeColor.Yellow, (2, 2), (1, 2));
+        var snake = Snake(SnakeColor.Yellow, (2, 2), (1, 2), (0, 2));
         var board = SimpleBoard(6, snake);
         var viewport = ViewportCalculator.Compute(40, 12, 6);
         var buffer = new FrameBuffer(viewport.TerminalWidth, viewport.TerminalHeight);
@@ -69,7 +69,31 @@ public sealed class BoardRendererTests
 
         var headX = viewport.BoardOriginX + 2 * ViewportCalculator.CellCharWidth;
         var headY = viewport.BoardOriginY + 2 * ViewportCalculator.CellCharHeight;
-        Assert.Equal(SnakeColor.Yellow, buffer[headX, headY].Background);
+        Assert.True(buffer[headX, headY].Reverse, "selected snake's head should be rendered in reverse video");
+        Assert.Equal(SnakeColor.Yellow, buffer[headX, headY].Foreground);
+
+        var bodyX = viewport.BoardOriginX + 1 * ViewportCalculator.CellCharWidth;
+        var bodyY = viewport.BoardOriginY + 2 * ViewportCalculator.CellCharHeight;
+        Assert.False(buffer[bodyX, bodyY].Reverse);
+        Assert.Equal(BoardRenderer.SelectedBodyChar, buffer[bodyX, bodyY].Char);
+    }
+
+    [Fact]
+    public void Unselected_snake_head_is_not_reverse_and_body_uses_full_block()
+    {
+        var snake = Snake(SnakeColor.Yellow, (2, 2), (1, 2), (0, 2));
+        var board = SimpleBoard(6, snake);
+        var viewport = ViewportCalculator.Compute(40, 12, 6);
+        var buffer = new FrameBuffer(viewport.TerminalWidth, viewport.TerminalHeight);
+        new BoardRenderer().Render(buffer, board, viewport, selectedSnakeIndex: null);
+
+        var headX = viewport.BoardOriginX + 2 * ViewportCalculator.CellCharWidth;
+        var headY = viewport.BoardOriginY + 2 * ViewportCalculator.CellCharHeight;
+        Assert.False(buffer[headX, headY].Reverse);
+
+        var bodyX = viewport.BoardOriginX + 1 * ViewportCalculator.CellCharWidth;
+        var bodyY = viewport.BoardOriginY + 2 * ViewportCalculator.CellCharHeight;
+        Assert.Equal(BoardRenderer.BodyChar, buffer[bodyX, bodyY].Char);
     }
 
     [Fact]
