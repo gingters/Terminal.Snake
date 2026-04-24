@@ -10,6 +10,15 @@ namespace TerminalSnake.Game;
 /// </summary>
 public static class SnakeSelection
 {
+    // The selection funnel is narrow near the origin — only the head column
+    // plus one cell either side is reachable for the first NarrowDepth
+    // rows — and widens by one cell per row after that. That stops a
+    // closer-but-sideways snake from stealing the selection when a snake
+    // is further away but right in front of the head. See issue #19 +
+    // follow-up.
+    private const int NarrowRadius = 1;
+    private const int NarrowDepth = 3;
+
     public static int? FindNearestInDirection(
         IReadOnlyList<Snake> snakes,
         Cell origin,
@@ -45,13 +54,9 @@ public static class SnakeSelection
         {
             return null;
         }
-        // Keep the candidate within the direction's "cone": the move-axis
-        // component must dominate the perpendicular, so pressing Right on
-        // (2,2) with a snake at (3,9) doesn't jump the selection across the
-        // board just because the snake is technically to the right of the
-        // origin column.
         var perpendicular = delta.X == 0 ? Math.Abs(dx) : Math.Abs(dy);
-        if (perpendicular > projection)
+        var maxPerpendicular = Math.Max(NarrowRadius, projection - NarrowDepth);
+        if (perpendicular > maxPerpendicular)
         {
             return null;
         }

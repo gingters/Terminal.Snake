@@ -103,6 +103,38 @@ public sealed class SnakeSelectionTests
     }
 
     [Fact]
+    public void Narrow_cone_ignores_a_sideways_closer_snake_in_favour_of_a_straight_one()
+    {
+        // Reproduces the bug reported after the first #19 iteration: pressing
+        // Down on the yellow snake (origin) must select the blue snake that
+        // lies straight below rather than the red snake that is only a row
+        // closer but two columns to the side. The narrow-funnel filter
+        // rejects the sideways candidate at short projection.
+        var snakes = new[]
+        {
+            Snake(SnakeColor.Yellow, (8, 2), (9, 2)),  // origin
+            Snake(SnakeColor.Red,    (6, 4), (7, 4)),  // 2 down, 2 left
+            Snake(SnakeColor.Blue,   (8, 7), (9, 7)),  // 5 down, 0 side
+        };
+        var result = SnakeSelection.FindNearestInDirection(snakes, new Cell(8, 2), Direction.Down, excludedIndex: 0);
+        Assert.Equal(2, result);
+    }
+
+    [Fact]
+    public void Narrow_cone_widens_at_distance_so_far_snakes_are_still_reachable()
+    {
+        // At projection 6 the funnel is wide enough to accept a candidate 3
+        // columns off-axis.
+        var snakes = new[]
+        {
+            Snake(SnakeColor.Yellow, (5, 5), (4, 5)),
+            Snake(SnakeColor.Blue,   (8, 11), (9, 11)), // 6 down, 3 right
+        };
+        var result = SnakeSelection.FindNearestInDirection(snakes, new Cell(5, 5), Direction.Down, excludedIndex: 0);
+        Assert.Equal(1, result);
+    }
+
+    [Fact]
     public void Snakes_outside_the_cone_are_rejected_even_if_closer()
     {
         // Only candidate is (6, 10) which is mostly below — it's outside the
