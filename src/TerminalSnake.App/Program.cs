@@ -78,7 +78,7 @@ internal static class Program
         };
 
         var events = Channel.CreateUnbounded<InputEvent>();
-        var reader = Task.Run(() => PumpStdin(events.Writer, cts.Token));
+        var reader = Task.Run(() => PumpStdin(events.Writer, cts.Token), cts.Token);
         var stopwatch = Stopwatch.StartNew();
         var viewport = engine.BuildViewport(Console.WindowWidth, Console.WindowHeight);
         var initialBuffer = engine.Render(viewport, stopwatch.Elapsed);
@@ -169,37 +169,21 @@ internal static class Program
         ((click.Column - viewport.BoardOriginX) / ViewportCalculator.CellCharWidth,
          (click.Row - viewport.BoardOriginY) / ViewportCalculator.CellCharHeight);
 
-    private static void PumpStdin(ChannelWriter<InputEvent> writer, CancellationToken ct)
+    // 50 ms is well below any realistic CSI follow-up latency (locally <1 ms,
+    // <10 ms over typical SSH) but well above human reaction time. Long enough
+    // that ESC + [ + A still parses as ↑; short enough that a bare Esc keypress
+    // resolves before the next render frame.
+    private static readonly TimeSpan EscapeIdleFlush = TimeSpan.FromMilliseconds(50);
+
+    private static Task PumpStdin(ChannelWriter<InputEvent> writer, CancellationToken ct)
     {
-        var parser = new BufferedInputParser();
         var stdin = OperatingSystem.IsWindows()
             ? Console.OpenStandardInput()
             : PosixTerminal.OpenTtyReadStream();
-        var buffer = new byte[128];
-        while (!ct.IsCancellationRequested)
-        {
-            int read;
-            try
-            {
-                read = stdin.Read(buffer, 0, buffer.Length);
-            }
-            catch
-            {
-                break;
-            }
-            if (read == 0)
-            {
-                Thread.Sleep(10);
-                continue;
-            }
-            var events = parser.Feed(buffer.AsSpan(0, read));
-            foreach (var evt in events)
-            {
-                if (!writer.TryWrite(evt))
-                {
-                    return;
-                }
-            }
-        }
+        return StdinInputLoop.RunAsync(
+            stdin,
+            EscapeIdleFlush,
+            evt => writer.TryWrite(evt),
+            ct);
     }
 }
