@@ -51,8 +51,12 @@ fi
 
 IMAGE="terminal-snake-test:$RID"
 echo "Building $IMAGE for $PLATFORM..."
+# Bash 3 (the macOS default) treats `"${array[@]}"` on an empty array as
+# "unbound" under `set -u`. The `${array[@]+...}` guard only expands the
+# array when it is set, sidestepping the quirk without losing word
+# boundaries inside.
 docker build \
-    "${BUILD_ARGS[@]}" \
+    ${BUILD_ARGS[@]+"${BUILD_ARGS[@]}"} \
     --platform "$PLATFORM" \
     -f "$RID/Dockerfile" \
     -t "$IMAGE" \
@@ -63,4 +67,4 @@ exec docker run \
     --rm -it \
     --platform "$PLATFORM" \
     "$IMAGE" \
-    "${CMD[@]}"
+    ${CMD[@]+"${CMD[@]}"}
