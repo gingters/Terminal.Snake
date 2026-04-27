@@ -2,7 +2,11 @@
 # Builds an image targeting linux/amd64 so it can be run on an Apple Silicon
 # Mac via Rosetta / QEMU emulation under Docker Desktop.
 
-FROM --platform=linux/amd64 ubuntu:24.04
+# A custom ARG (not buildx's auto-populated TARGETPLATFORM) lets us pin
+# the architecture identically to the previous literal --platform value
+# while satisfying BuildKit's FromPlatformFlagConstDisallowed lint.
+ARG IMAGE_PLATFORM=linux/amd64
+FROM --platform=${IMAGE_PLATFORM} ubuntu:24.04
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \

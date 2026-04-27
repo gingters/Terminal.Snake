@@ -1,7 +1,11 @@
 # Linux arm64 test environment for terminal-snake.
 # Targets linux/arm64 so it runs natively on Apple Silicon.
 
-FROM --platform=linux/arm64 ubuntu:24.04
+# A custom ARG (not buildx's auto-populated TARGETPLATFORM) lets us pin
+# the architecture identically to the previous literal --platform value
+# while satisfying BuildKit's FromPlatformFlagConstDisallowed lint.
+ARG IMAGE_PLATFORM=linux/arm64
+FROM --platform=${IMAGE_PLATFORM} ubuntu:24.04
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
