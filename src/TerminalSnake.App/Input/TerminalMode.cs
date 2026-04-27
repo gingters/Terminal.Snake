@@ -28,6 +28,7 @@ public sealed class TerminalMode : IDisposable
     {
         ArgumentNullException.ThrowIfNull(output);
         PosixTerminal.EnterRawMode();
+        WindowsTerminal.EnterRawMode();
         output.Write(TerminalEscapeSequences.EnableMouse);
         output.Write(TerminalEscapeSequences.HideCursor);
         output.Flush();
@@ -44,6 +45,7 @@ public sealed class TerminalMode : IDisposable
         output.Write(TerminalEscapeSequences.ShowCursor);
         output.Write(TerminalEscapeSequences.DisableMouse);
         output.Flush();
+        WindowsTerminal.Restore();
         PosixTerminal.Restore();
         _enabled = false;
     }
