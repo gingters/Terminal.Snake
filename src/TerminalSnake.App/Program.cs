@@ -76,6 +76,12 @@ internal static class Program
             e.Cancel = true;
             cts.Cancel();
         };
+        // #49 — Console.CancelKeyPress only catches Ctrl+C. SIGTERM (kill),
+        // SIGHUP (terminal close), and SIGQUIT (Ctrl+\) bypass the managed
+        // handler and skip Run's finally block, leaving the tty in raw mode.
+        // Driving the same cancellation source on every recoverable signal
+        // makes shutdown deterministic.
+        using var signalRegistration = ShutdownSignals.Register(cts);
 
         var events = Channel.CreateUnbounded<InputEvent>();
         var reader = Task.Run(() => PumpStdin(events.Writer, cts.Token));
