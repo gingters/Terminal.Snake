@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Text;
 using System.Threading.Channels;
 using Spectre.Console;
 using TerminalSnake.Game;
@@ -18,6 +19,12 @@ internal static class Program
 {
     private static int Main(string[] args)
     {
+        // Pin the console to UTF-8 before any write so the box-drawing
+        // glyphs (═ ║ ╔ ╗ ╚ ╝ ► ◄ ▲ ▼) survive the journey. Without
+        // this, Windows console hosts default to the OEM code page
+        // (CP437/CP850 depending on locale) and our multi-byte UTF-8
+        // sequences land as garbage that shifts subsequent columns.
+        Console.OutputEncoding = Encoding.UTF8;
         try
         {
             return Run();
