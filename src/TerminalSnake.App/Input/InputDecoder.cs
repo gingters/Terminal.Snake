@@ -165,29 +165,54 @@ public static class InputDecoder
 
     private static MouseClickEvent? BuildMouseEvent(string payload, bool isPress)
     {
-        if (!isPress)
+        if (!isPress || !TryParseSgrTriplet(payload, out var button, out var column, out var row))
         {
             return null;
         }
+        var mapped = MapButton(button);
+        return mapped is null ? null : new MouseClickEvent(column - 1, row - 1, mapped.Value);
+    }
+
+    private static bool TryParseSgrTriplet(string payload, out int button, out int column, out int row)
+    {
+        button = column = row = 0;
         var parts = payload.Split(';');
         if (parts.Length != 3)
         {
-            return null;
+            return false;
         }
-        if (!int.TryParse(parts[0], out var button) ||
-            !int.TryParse(parts[1], out var column) ||
-            !int.TryParse(parts[2], out var row))
+        return int.TryParse(parts[0], out button)
+            && int.TryParse(parts[1], out column)
+            && int.TryParse(parts[2], out row);
+    }
+
+    // SGR-1006 button code layout (xterm):
+    //   bits 0-1: button (0=Left, 1=Middle, 2=Right, 3=release-with-no-button)
+    //   bit  2 (4) : Shift modifier
+    //   bit  3 (8) : Meta/Alt modifier
+    //   bit  4 (16): Ctrl modifier
+    //   bit  5 (32): motion flag (sent while a button is held during drag)
+    //   bit  6 (64): wheel event (button=64 wheel-up, 65 wheel-down)
+    //   bit  7 (128): "extra" buttons 8-11
+    // We only surface plain button presses; motion, wheel, and extra
+    // buttons collapsing into Left clicks was issue #48.
+    private const int MotionFlag = 32;
+    private const int WheelFlag = 64;
+    private const int ExtraButtonFlag = 128;
+    private const int NonClickMask = MotionFlag | WheelFlag | ExtraButtonFlag;
+
+    private static MouseButton? MapButton(int raw)
+    {
+        if ((raw & NonClickMask) != 0)
         {
             return null;
         }
-        return new MouseClickEvent(column - 1, row - 1, MapButton(button));
+        return (raw & 0b11) switch
+        {
+            0 => MouseButton.Left,
+            1 => MouseButton.Middle,
+            2 => MouseButton.Right,
+            _ => null,
+        };
     }
-
-    private static MouseButton MapButton(int raw) => (raw & 0b11) switch
-    {
-        0 => MouseButton.Left,
-        1 => MouseButton.Middle,
-        2 => MouseButton.Right,
-        _ => MouseButton.Left,
-    };
 }
