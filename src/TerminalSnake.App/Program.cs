@@ -117,7 +117,12 @@ internal static class Program
         events.Writer.TryComplete();
         try
         {
-            reader.Wait(TimeSpan.FromMilliseconds(200));
+            // Issue #50: with VMIN=0/VTIME=1 the pump's stdin read wakes
+            // every ~100 ms, so a clean join replaces the previous 200 ms
+            // magic-number Wait that used to abandon the thread. The pump
+            // observes cancellation on its next polling-read tick and
+            // returns; the broader shutdown ordering is tracked in #47.
+            reader.Wait();
         }
         catch
         {
