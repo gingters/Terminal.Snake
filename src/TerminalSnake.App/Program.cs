@@ -57,18 +57,18 @@ internal static class Program
 
         using var terminalMode = new TerminalMode();
         terminalMode.Enable(Console.Out);
-        try
-        {
-            RunLoop(engine);
-        }
-        finally
-        {
-            terminalMode.Disable(Console.Out);
-        }
+        // Disable is invoked by RunLoop via ShutdownSequence so it runs
+        // AFTER the stdin pump has stopped (issue #47). The `using` above
+        // is a safety net for the exception path: if RunLoop throws
+        // before reaching the shutdown sequence, Dispose still restores
+        // the terminal — it just lacks the synchronization guarantee
+        // because there's nothing left to synchronize with at that
+        // point.
+        RunLoop(engine, terminalMode);
         return 0;
     }
 
-    private static void RunLoop(GameEngine engine)
+    private static void RunLoop(GameEngine engine, TerminalMode terminalMode)
     {
         using var cts = new CancellationTokenSource();
         Console.CancelKeyPress += (_, e) =>
@@ -79,6 +79,33 @@ internal static class Program
 
         var events = Channel.CreateUnbounded<InputEvent>();
         var reader = Task.Run(() => PumpStdin(events.Writer, cts.Token));
+        try
+        {
+            DriveLiveLoop(engine, events, cts);
+        }
+        finally
+        {
+            events.Writer.TryComplete();
+            // Single ordered shutdown: cancel → wait for pump → restore
+            // terminal. Closes the tcsetattr/stdin.Read race from #47.
+            // The 250 ms timeout is the upper bound for the pump to
+            // observe cancellation under VTIME=1 (#50); under VTIME=0
+            // a parked read may not wake at all, in which case we
+            // still proceed to Disable rather than hang the user's
+            // shell — see ShutdownSequence for the trade-off.
+            ShutdownSequence.Run(
+                cancel: cts,
+                pumpTask: reader,
+                pumpJoinTimeout: TimeSpan.FromMilliseconds(250),
+                disable: () => terminalMode.Disable(Console.Out));
+        }
+    }
+
+    private static void DriveLiveLoop(
+        GameEngine engine,
+        Channel<InputEvent> events,
+        CancellationTokenSource cts)
+    {
         var stopwatch = Stopwatch.StartNew();
         var viewport = engine.BuildViewport(Console.WindowWidth, Console.WindowHeight);
         var initialBuffer = engine.Render(viewport, stopwatch.Elapsed);
@@ -112,17 +139,6 @@ internal static class Program
                     Thread.Sleep(16);
                 }
             });
-
-        cts.Cancel();
-        events.Writer.TryComplete();
-        try
-        {
-            reader.Wait(TimeSpan.FromMilliseconds(200));
-        }
-        catch
-        {
-            // Reader task may throw during shutdown; suppress.
-        }
     }
 
     private static void DrainEvents(
