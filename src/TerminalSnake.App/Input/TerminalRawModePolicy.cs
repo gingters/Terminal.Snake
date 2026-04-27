@@ -17,9 +17,9 @@ public static class TerminalRawModePolicy
     // until at least one byte arrived. With VMIN=0/VTIME=1 the read
     // returns after ~100 ms even when no key was pressed, so the pump
     // loop wakes, observes cancellation, and exits cleanly.
-    public static byte Vmin => 1;
+    public static byte Vmin => 0;
 
     // 0.1 s ticks. Bumped from 0 to 1 to bound the worst-case shutdown
     // latency at ~100 ms regardless of whether the user is typing.
-    public static byte Vtime => 0;
+    public static byte Vtime => 1;
 }

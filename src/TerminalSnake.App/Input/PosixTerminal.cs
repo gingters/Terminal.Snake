@@ -70,8 +70,11 @@ internal static partial class PosixTerminal
             _hasSaved = true;
 
             current.c_lflag &= ~(DarwinIcanon | DarwinEcho | DarwinEchonl | DarwinIexten);
-            current.c_cc[DarwinVmin] = 1;
-            current.c_cc[DarwinVtime] = 0;
+            // VMIN=0/VTIME=1 turns read() into a ~100 ms polling read so
+            // the pump thread can observe cancellation on shutdown
+            // (issue #50). See TerminalRawModePolicy for the rationale.
+            current.c_cc[DarwinVmin] = TerminalRawModePolicy.Vmin;
+            current.c_cc[DarwinVtime] = TerminalRawModePolicy.Vtime;
             return TcSetAttr(StdinFileno, TcsaNow, &current) == 0;
         }
     }

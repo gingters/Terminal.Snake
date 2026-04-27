@@ -67,8 +67,11 @@ internal static partial class LinuxTerminal
             _hasSaved = true;
 
             current.c_lflag &= ~(LinuxIcanon | LinuxEcho | LinuxEchonl | LinuxIexten);
-            current.c_cc[LinuxVmin] = 1;
-            current.c_cc[LinuxVtime] = 0;
+            // VMIN=0/VTIME=1 turns read() into a ~100 ms polling read so
+            // the pump thread can observe cancellation on shutdown
+            // (issue #50). See TerminalRawModePolicy for the rationale.
+            current.c_cc[LinuxVmin] = TerminalRawModePolicy.Vmin;
+            current.c_cc[LinuxVtime] = TerminalRawModePolicy.Vtime;
             return TcSetAttr(StdinFileno, TcsaNow, &current) == 0;
         }
     }
